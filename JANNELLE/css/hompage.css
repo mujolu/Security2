@@ -1,0 +1,117 @@
+@import url('https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700;800;900&display=swap');
+
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+    font-family: 'Poppins', sans-serif;
+}
+
+body {
+    background-image: url(../images/blackimg.jpg); /* Replace 'your-image-path.jpg' with the path to your background image */
+    background-size: cover; /* Ensures the image covers the entire background */
+    background-position: center; /* Centers the background image */
+    background-repeat: no-repeat; /* Prevents the image from repeating */
+    background-attachment: fixed; /* Keeps the background image fixed when scrolling */
+    color: #333;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: space-between;
+    height: 100vh;
+    margin: 0;
+}
+    
+/* Navbar */
+.navbar {
+    width: 100%;
+    background-color: #302d2d;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.217);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 10px 20px;
+  }
+  
+  .navbar-logo a {
+    font-size: 24px;
+    font-weight: 700;
+    color: #dedede;
+  }
+  
+  
+  .navbar-auth a {
+    margin-left: 10px;
+    padding: 8px 15px;
+    border-radius: 5px;
+    font-weight: 500;
+    text-decoration: none;
+    transition: background-color 0.3s ease;
+  }
+  
+  .btn-login {
+    background-color: #f8c24d; /* Yellow */
+    color: #000;
+  }
+  
+  .btn-login:hover {
+    background-color: #e7b23e;
+    color: #fff;
+  }
+  
+  .btn-register {
+    background-color: #f8c24d; /* Yellow */
+    color: #000;
+  }
+  
+  .btn-register:hover {
+    background-color: #e7b23e;
+  }
+
+/* Hero Section */
+.hero-section {
+    text-align: center;
+    margin-top: 100px;
+}
+
+.hero-section h1 {
+    font-size: 48px;
+    color: #f8c24d;
+}
+
+.hero-section p {
+    font-size: 18px;
+    margin-top: 20px;
+    color: #e6e0e0;
+}
+
+.btn-cta {
+    display: inline-block;
+    margin-top: 30px;
+    padding: 12px 25px;
+    background-color: #f8c24d;
+    color: #000;
+    border-radius: 30px;
+    text-decoration: none;
+    font-weight: 600;
+    box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
+}
+
+.btn-cta:hover {
+    background-color: #e7b23e;
+}
+
+/* Footer */
+footer {
+    background-color: #302d2d;
+    padding: 10px;
+    width: 100%;
+    text-align: center;
+    box-shadow: 0 -2px 4px rgba(0, 0, 0, 0.1);
+  }
+  
+  footer p {
+    color: #878383;
+    font-size: 14px;
+  }
+  
