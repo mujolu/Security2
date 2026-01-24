@@ -1,2 +1,3 @@
 # Security2
-Validation of User
+User validation integrating OTP, Role-based, Logs into the system
+
