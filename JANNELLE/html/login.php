@@ -68,6 +68,7 @@
             <br>
             <button type="submit">Login</button>
             <br>
+            <button type="button" onclick="window.location.href='forgot_pass.html'">Forgot Password?</button>
             <br>
             <div class="forgot-password">
                 <a href="resetpass.php" id="forgotPasswordLink" style="display: none;">Forgot Password? Reset Here</a>

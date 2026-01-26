@@ -76,7 +76,7 @@ body {
   width: 400px;
   height: 500px;
   color: #fff;
-  margin-left: 60%;
+  margin: 0;
 }
 
 form h2 {
@@ -111,6 +111,7 @@ span {
   color:  #222222a0;
 }
 
+/* 
 .forgot-password {
   margin-bottom: 80px;
   text-align: right;
@@ -119,13 +120,15 @@ span {
 
 .forgot-password a {
   text-decoration: none;
-  color: #fdba3d; /* Default link color */
-  transition: color 0.3s ease; /* Smooth transition for hover effect */
+  color: #fdba3d; 
+  transition: color 0.3s ease; 
 }
 
 .forgot-password a:hover {
-  color: #2f2e2e; /* Turn white when hovered */
-}
+  color: #2f2e2e; 
+} 
+
+*/ 
 
 button {
   width: 100%;
@@ -136,10 +139,24 @@ button {
   border-radius: 4px;
   font-size: 16px;
   cursor: pointer;
+  margin-top: 10px;
 }
 
 button:hover {
   background-color: #524b3d;
+}
+
+/* Forgot Password Button Styling */
+button[onclick*="forgot_pass.html"] {
+  background-color: #666;
+  color: #ffffff;
+  margin-top: 10px;
+  transition: all 0.3s ease;
+}
+
+button[onclick*="forgot_pass.html"]:hover {
+  background-color: #555;
+  transform: scale(1.02);
 }
 
 .signUp-link {
