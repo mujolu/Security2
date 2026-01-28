@@ -7,7 +7,6 @@
     <title>Login to Artlab</title>
     <link rel="stylesheet" href="../html/script.php?dir=css&file=login.css">
     <style>
-        <style>
     #overlay {
         position: fixed;
         top: 0;
@@ -23,7 +22,6 @@
         pointer-events: none;
         opacity: 0.5;
     }
-</style>
     </style>
 </head>
 
@@ -68,13 +66,8 @@
             <br>
             <button type="submit">Login</button>
             <br>
-            <button type="button" onclick="window.location.href='forgot_pass.html'">Forgot Password?</button>
-            <br>
-            <div class="forgot-password">
-                <a href="resetpass.php" id="forgotPasswordLink" style="display: none;">Forgot Password? Reset Here</a>
-                <div id="lockoutMessage" style="display: none; color: red;"></div>
-            </div>
-            
+
+            <a id="forgotPasswordLink" href="../html/resetpass.php" class="forgot-password-link" style="display: none;">Forgot Password? Recover Account</a>
         </form>
     </div>
     <div id="overlay"></div>

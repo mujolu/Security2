@@ -14,42 +14,91 @@ $success = '';
 // Step 1: Email/Username verification
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['step1_submit'])) {
     $email_or_username = isset($_POST['email_username']) ? trim($_POST['email_username']) : '';
-    
+
     if (empty($email_or_username)) {
         $error = "Please enter your email or username.";
     } else {
-        // Check if user exists
-        $query = "SELECT id, email FROM users WHERE email = ? OR username = ?";
+        // Check if user exists (PDO)
+        $query = "SELECT * FROM registered_users WHERE email = :val OR username = :val LIMIT 1";
         $stmt = $conn->prepare($query);
-        $stmt->bind_param("ss", $email_or_username, $email_or_username);
-        $stmt->execute();
-        $result = $stmt->get_result();
-        
-        if ($result->num_rows > 0) {
-            $user = $result->fetch_assoc();
+        $stmt->execute([':val' => $email_or_username]);
+        $user = $stmt->fetch(PDO::FETCH_ASSOC);
+
+        if ($user) {
             $_SESSION['recovery_user_id'] = $user['id'];
             $_SESSION['recovery_email'] = $user['email'];
             $_SESSION['recovery_step'] = 2;
-            // In real scenario, send OTP to email
-            $_SESSION['recovery_otp'] = rand(100000, 999999); // Temporary OTP for demo
-            $success = "OTP has been sent to your email.";
+
+            // Determine if account has security questions set (check columns and values)
+            $hasSecurity = false;
+            try {
+                $cols = [];
+                $colStmt = $conn->query("SHOW COLUMNS FROM registered_users");
+                $allCols = $colStmt->fetchAll(PDO::FETCH_COLUMN);
+                $needed = ['security_q1','security_a1','security_q2','security_a2','security_q3','security_a3'];
+                $missing = array_diff($needed, $allCols);
+                if (empty($missing)) {
+                    // fetch the user's security fields
+                    $sqStmt = $conn->prepare("SELECT security_q1,security_a1,security_q2,security_a2,security_q3,security_a3 FROM registered_users WHERE id = :id LIMIT 1");
+                    $sqStmt->execute([':id' => $user['id']]);
+                    $sq = $sqStmt->fetch(PDO::FETCH_ASSOC);
+                    // consider set if at least one answer exists
+                    if ($sq && (!empty($sq['security_a1']) || !empty($sq['security_a2']) || !empty($sq['security_a3']))) {
+                        $hasSecurity = true;
+                        $_SESSION['security_questions'] = $sq; // store questions and answers (answers used server-side only)
+                    }
+                }
+            } catch (Exception $e) {
+                // ignore; treat as no security questions
+            }
+            $_SESSION['has_security'] = $hasSecurity;
+
+            // Generate OTP and send via email
+            $otp = rand(100000, 999999);
+            $_SESSION['recovery_otp'] = $otp;
+
+            $to = $user['email'];
+            $subject = 'Your Artlab OTP Code';
+            $message = "Your OTP for account recovery is: " . $otp . "\nThis code is valid for 10 minutes.";
+            $headers = "From: no-reply@yourdomain.com\r\n" .
+                       "MIME-Version: 1.0\r\n" .
+                       "Content-type: text/plain; charset=UTF-8\r\n";
+
+            // Attempt to send email; on failure OTP remains in session for demo/testing
+            $mailSent = false;
+            try {
+                $mailSent = mail($to, $subject, $message, $headers);
+            } catch (Exception $e) {
+                $mailSent = false;
+            }
+
+            if ($mailSent) {
+                $success = "OTP has been sent to your email.";
+            } else {
+                $success = "OTP generated and stored (email not sent - configure SMTP). For testing, use: " . $otp;
+            }
         } else {
             $error = "Email or username not found.";
         }
-        $stmt->close();
     }
 }
 
 // Step 2: OTP verification
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['step2_submit'])) {
     $entered_otp = isset($_POST['otp']) ? trim($_POST['otp']) : '';
-    
+
     if (empty($entered_otp)) {
         $error = "Please enter the OTP.";
-    } elseif ($entered_otp == $_SESSION['recovery_otp']) {
-        $_SESSION['recovery_step'] = 3;
+    } elseif (isset($_SESSION['recovery_otp']) && $entered_otp == $_SESSION['recovery_otp']) {
         $_SESSION['otp_verified'] = true;
-        $success = "OTP verified! Please answer the security questions.";
+        // If user has security questions set, go to step 3, otherwise skip to step 4
+        if (!empty($_SESSION['has_security'])) {
+            $_SESSION['recovery_step'] = 3;
+            $success = "OTP verified! Please answer the security questions.";
+        } else {
+            $_SESSION['recovery_step'] = 4;
+            $success = "OTP verified! You may reset your password.";
+        }
     } else {
         $error = "Invalid OTP. Please try again.";
     }
@@ -57,22 +106,34 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['step2_submit'])) {
 
 // Step 3: Security questions verification
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['step3_submit'])) {
-    // For demo purposes, we'll use predefined answers
-    // In production, fetch from database and compare
-    $security_answers = array(
-        1 => ['correct' => 'blue', 'question' => 'What is your favorite color?'],
-        2 => ['correct' => 'paris', 'question' => 'What is the capital of France?'],
-        3 => ['correct' => 'pizza', 'question' => 'What is your favorite food?']
-    );
-    
     $answers_correct = 0;
-    for ($i = 1; $i <= 3; $i++) {
-        $answer = isset($_POST['answer' . $i]) ? trim($_POST['answer' . $i]) : '';
-        if (strtolower($answer) === strtolower($security_answers[$i]['correct'])) {
-            $answers_correct++;
+
+    // If user has stored security answers, use them; otherwise fall back to demo questions
+    if (!empty($_SESSION['has_security']) && !empty($_SESSION['security_questions'])) {
+        $sq = $_SESSION['security_questions'];
+        for ($i = 1; $i <= 3; $i++) {
+            $field = 'answer' . $i;
+            $submitted = isset($_POST[$field]) ? trim($_POST[$field]) : '';
+            $correct = isset($sq['security_a' . $i]) ? $sq['security_a' . $i] : '';
+            if ($submitted !== '' && strcasecmp($submitted, $correct) === 0) {
+                $answers_correct++;
+            }
+        }
+    } else {
+        // Demo fallback (same as before)
+        $security_answers = array(
+            1 => ['correct' => 'blue'],
+            2 => ['correct' => 'paris'],
+            3 => ['correct' => 'pizza']
+        );
+        for ($i = 1; $i <= 3; $i++) {
+            $answer = isset($_POST['answer' . $i]) ? trim($_POST['answer' . $i]) : '';
+            if (strtolower($answer) === strtolower($security_answers[$i]['correct'])) {
+                $answers_correct++;
+            }
         }
     }
-    
+
     if ($answers_correct >= 2) { // At least 2 correct answers
         $_SESSION['recovery_step'] = 4;
         $success = "Security questions verified! You can now reset your password.";
@@ -102,22 +163,24 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['step4_submit'])) {
     } elseif (!preg_match('/[!@#$%^&*]/', $password)) {
         $error = "Password must contain at least one special character (!@#$%^&*).";
     } else {
-        // Update password in database
+        // Update password in database (PDO)
         $hashed_password = password_hash($password, PASSWORD_BCRYPT);
         $user_id = $_SESSION['recovery_user_id'];
-        
-        $update_query = "UPDATE users SET password = ? WHERE id = ?";
+
+        $update_query = "UPDATE registered_users SET password = :pw WHERE id = :id";
         $update_stmt = $conn->prepare($update_query);
-        $update_stmt->bind_param("si", $hashed_password, $user_id);
-        
-        if ($update_stmt->execute()) {
+        $ok = $update_stmt->execute([':pw' => $hashed_password, ':id' => $user_id]);
+
+        if ($ok) {
             // Clear recovery session
             unset($_SESSION['recovery_step']);
             unset($_SESSION['recovery_user_id']);
             unset($_SESSION['recovery_email']);
             unset($_SESSION['recovery_otp']);
             unset($_SESSION['otp_verified']);
-            
+            unset($_SESSION['has_security']);
+            unset($_SESSION['security_questions']);
+
             $success = "Password reset successfully! Redirecting to login...";
             echo "<script>
                 setTimeout(function() {
@@ -127,7 +190,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['step4_submit'])) {
         } else {
             $error = "Failed to update password. Please try again.";
         }
-        $update_stmt->close();
     }
 }
 

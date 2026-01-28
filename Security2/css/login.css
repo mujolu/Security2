@@ -147,14 +147,14 @@ button:hover {
 }
 
 /* Forgot Password Button Styling */
-button[onclick*="forgot_pass.html"] {
+button[onclick*="resetpass.php"] {
   background-color: #666;
   color: #ffffff;
   margin-top: 10px;
   transition: all 0.3s ease;
 }
 
-button[onclick*="forgot_pass.html"]:hover {
+button[onclick*="resetpass.php"]:hover {
   background-color: #555;
   transform: scale(1.02);
 }

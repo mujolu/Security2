@@ -101,11 +101,13 @@ document.addEventListener('DOMContentLoaded', function () {
         return alphanumericRegex.test(username) && containsLetters && containsNumbers;
     }
 
+   
     function showForgotPasswordLink() {
         if (forgotPasswordLink) {
             forgotPasswordLink.style.display = 'inline';
         }
     }
+
 
     function isLockedOut() {
         const currentTime = new Date().getTime() / 1000;
