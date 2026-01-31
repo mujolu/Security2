@@ -21,7 +21,18 @@ $mailFromEmail = $_ENV['MAIL_FROM_EMAIL'] ?? 'noreply@security2.com';
 $otpExpiry = (int)($_ENV['OTP_EXPIRY_MINUTES'] ?? 2);
 
 // Configuration based on service
-if ($mailService === 'mailtrap') {
+if ($mailService === 'gmail_oauth2') {
+    // Gmail OAuth2 configuration
+    define('EMAIL_CONFIG', [
+        'from_email'    => $mailFromEmail,
+        'from_name'     => $mailFromName,
+        'otp_expiry'    => $otpExpiry,
+        'service'       => 'gmail_oauth2',
+        'google_client_id'     => $_ENV['GOOGLE_CLIENT_ID'] ?? '',
+        'google_client_secret' => $_ENV['GOOGLE_CLIENT_SECRET'] ?? '',
+        'google_redirect_uri'  => $_ENV['GOOGLE_REDIRECT_URI'] ?? ''
+    ]);
+} elseif ($mailService === 'mailtrap') {
     // Mailtrap configuration
     define('EMAIL_CONFIG', [
         'smtp_host'     => $_ENV['MAILTRAP_HOST'] ?? 'smtp.mailtrap.io',

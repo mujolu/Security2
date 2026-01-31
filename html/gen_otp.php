@@ -1,6 +1,7 @@
 <?php
 include 'connection.php';
 require_once 'email_helper.php';
+require_once 'gmail_oauth2_helper.php';
 
 $data = json_decode(file_get_contents("php://input"), true);
 $email = $data['email'] ?? '';
@@ -46,8 +47,13 @@ $stmt = $conn->prepare(
 $stmt->bind_param("sssss", $email, $hashedOtp, $expires, $hashedOtp, $expires);
 $stmt->execute();
 
-// 4️⃣ Send OTP via Gmail + PHPMailer
-$emailResult = sendOTPEmail($email, $otp, 2);
+// 4️⃣ Send OTP via Gmail OAuth2 or email helper
+$mailService = $_ENV['MAIL_SERVICE'] ?? 'mailtrap';
+if ($mailService === 'gmail_oauth2') {
+    $emailResult = sendOTPViaGmail($email, $otp, 2);
+} else {
+    $emailResult = sendOTPEmail($email, $otp, 2);
+}
 
 if ($emailResult['success']) {
     $response["success"] = true;

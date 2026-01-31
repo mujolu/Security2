@@ -53,29 +53,26 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['step1_submit'])) {
             }
             $_SESSION['has_security'] = $hasSecurity;
 
-            // Generate OTP and send via email
+            // Generate OTP and send via Mailtrap/email helper
             $otp = rand(100000, 999999);
             $_SESSION['recovery_otp'] = $otp;
 
-            $to = $user['email'];
-            $subject = 'Your Artlab OTP Code';
-            $message = "Your OTP for account recovery is: " . $otp . "\nThis code is valid for 10 minutes.";
-            $headers = "From: no-reply@yourdomain.com\r\n" .
-                       "MIME-Version: 1.0\r\n" .
-                       "Content-type: text/plain; charset=UTF-8\r\n";
-
-            // Attempt to send email; on failure OTP remains in session for demo/testing
-            $mailSent = false;
-            try {
-                $mailSent = mail($to, $subject, $message, $headers);
-            } catch (Exception $e) {
-                $mailSent = false;
+            // Send OTP via Gmail OAuth2 or email helper
+            require_once 'email_helper.php';
+            require_once 'gmail_oauth2_helper.php';
+            
+            // Use Gmail OAuth2 if configured
+            $mailService = $_ENV['MAIL_SERVICE'] ?? 'mailtrap';
+            if ($mailService === 'gmail_oauth2') {
+                $result = sendOTPViaGmail($user['email'], $otp, 10); // 10 minutes expiry
+            } else {
+                $result = sendOTPEmail($user['email'], $otp, 10); // Fallback to email_helper
             }
 
-            if ($mailSent) {
+            if ($result['success']) {
                 $success = "OTP has been sent to your email.";
             } else {
-                $success = "OTP generated and stored (email not sent - configure SMTP). For testing, use: " . $otp;
+                $success = "Error sending OTP: " . $result['message'];
             }
         } else {
             $error = "Email or username not found.";

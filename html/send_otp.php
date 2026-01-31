@@ -3,8 +3,9 @@
 session_start();
 header("Content-Type: application/json");
 
-// Include email helper
+// Include email helpers
 require_once 'email_helper.php';
+require_once 'gmail_oauth2_helper.php';
 
 // Read JSON input from fetch
 $data = json_decode(file_get_contents("php://input"), true);
@@ -36,8 +37,13 @@ $_SESSION['otp'] = $otp;
 $_SESSION['otp_email'] = $email;
 $_SESSION['otp_expire'] = time() + 120; // 2 minutes expiry
 
-// Send OTP via PHPMailer + Gmail
-$result = sendOTPEmail($email, $otp, 2);
+// Send OTP via Gmail OAuth2 or email helper
+$mailService = $_ENV['MAIL_SERVICE'] ?? 'mailtrap';
+if ($mailService === 'gmail_oauth2') {
+    $result = sendOTPViaGmail($email, $otp, 2);
+} else {
+    $result = sendOTPEmail($email, $otp, 2);
+}
 
 echo json_encode([
     "status" => $result['success'] ? "success" : "error",
