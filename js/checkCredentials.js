@@ -69,11 +69,11 @@ function validateUsernameLength(usernameField, errorElement) {
     }
     
     if (/(.)\1{2,}/.test(value)) {
-        showError(middleInitialField, 'No three consecutive duplicate letters allowed.');
+        showError('No three consecutive duplicate letters allowed.', errorElement);
         return false;
     }
     if (/(\.\.)/.test(value)) {
-        showError('User cannot contain consecutive dots.', errorElement);
+        showError('Username cannot contain consecutive dots.', errorElement);
         return false;
     }
     
@@ -106,28 +106,10 @@ function validateEmail(emailField, errorElement) {
         return false;
     }
     
-    if (/(.)\1{2,}/.test(value)) {
-        showError(middleInitialField, 'No three consecutive duplicate letters allowed.');
-        return false;
-    }
     if (/(\.\.)/.test(value)) {
         showError('Email cannot contain consecutive dots.', errorElement);
         return false;
     }
-    if (/^\d/.test(value)) {
-        showError('Email cannot start with a number.', errorElement);
-        return false;
-    }
-    if (/[A-Z]/.test(value)) {
-        showError('No upperscase letters are allowed.', errorElement);
-        return false;
-    }
-    
-    if (/^[^a-z0-9]/.test(value)) {
-        showError('Email cannot start with a special character.', errorElement);
-        return false;
-    }
-    
     
     const emailPattern = /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/;
     if (!emailPattern.test(value)) {
@@ -185,3 +167,57 @@ async function checkEmailExists(emailField, errorElement) {
     }
 }
 
+// Initialize form validation on page load
+document.addEventListener('DOMContentLoaded', function() {
+    const form = document.getElementById('registrationForm');
+    const usernameField = document.getElementById('username');
+    const emailField = document.getElementById('email');
+    const usernameError = document.getElementById('usernameError');
+    const emailError = document.getElementById('emailError');
+
+    // Validate username on blur
+    if (usernameField) {
+        usernameField.addEventListener('blur', async function() {
+            validateUsernameLength(usernameField, usernameError);
+            await checkUsernameExists(usernameField, usernameError);
+        });
+    }
+
+    // Validate email on blur
+    if (emailField) {
+        emailField.addEventListener('blur', async function() {
+            validateEmail(emailField, emailError);
+            await checkEmailExists(emailField, emailError);
+        });
+    }
+
+    // Validate on form submit
+    if (form) {
+        form.addEventListener('submit', async function(event) {
+            let isValid = true;
+
+            // Validate username
+            if (usernameField && usernameField.value) {
+                if (!validateUsernameLength(usernameField, usernameError)) {
+                    isValid = false;
+                } else if (!await checkUsernameExists(usernameField, usernameError)) {
+                    isValid = false;
+                }
+            }
+
+            // Validate email
+            if (emailField && emailField.value) {
+                if (!validateEmail(emailField, emailError)) {
+                    isValid = false;
+                } else if (!await checkEmailExists(emailField, emailError)) {
+                    isValid = false;
+                }
+            }
+
+            // Prevent submission if validation fails
+            if (!isValid) {
+                event.preventDefault();
+            }
+        });
+    }
+});

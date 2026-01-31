@@ -67,7 +67,7 @@
             <button type="submit">Login</button>
             <br>
 
-            <a id="forgotPasswordLink" href="../html/resetpass.php" class="forgot-password-link" style="display: none;">Forgot Password? Recover Account</a>
+            <a href="../html/resetpass.php" class="forgot-password-link">Forgot Password? Recover Account</a>
         </form>
     </div>
     <div id="overlay"></div>

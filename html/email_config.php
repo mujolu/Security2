@@ -1,6 +1,7 @@
 <?php
 /**
- * Email Configuration for PHPMailer with Gmail SMTP
+ * Email Configuration for PHPMailer
+ * Supports: Gmail SMTP, Mailtrap, or other SMTP services
  */
 
 require_once __DIR__ . '/../vendor/autoload.php';
@@ -11,28 +12,46 @@ use Dotenv\Dotenv;
 $dotenv = Dotenv::createImmutable(__DIR__ . '/..');
 $dotenv->load();
 
-// Get environment variables with fallbacks
-$gmailEmail = $_ENV['GMAIL_EMAIL'] ?? getenv('GMAIL_EMAIL');
-$gmailPassword = $_ENV['GMAIL_APP_PASSWORD'] ?? getenv('GMAIL_APP_PASSWORD');
-$mailFromName = $_ENV['MAIL_FROM_NAME'] ?? getenv('MAIL_FROM_NAME');
-$mailFromEmail = $_ENV['MAIL_FROM_EMAIL'] ?? getenv('MAIL_FROM_EMAIL');
-$otpExpiry = (int)($_ENV['OTP_EXPIRY_MINUTES'] ?? getenv('OTP_EXPIRY_MINUTES') ?? 2);
+// Determine which email service to use
+$mailService = $_ENV['MAIL_SERVICE'] ?? 'gmail';
 
-// Email configuration constants
-define('EMAIL_CONFIG', [
-    'smtp_host'     => 'smtp.gmail.com',
-    'smtp_port'     => 587,
-    'smtp_username' => $gmailEmail,
-    'smtp_password' => $gmailPassword,
-    'from_email'    => $mailFromEmail,
-    'from_name'     => $mailFromName,
-    'smtp_secure'   => 'tls',
-    'otp_expiry'    => $otpExpiry
-]);
+// Get common settings
+$mailFromName = $_ENV['MAIL_FROM_NAME'] ?? 'Security2 System';
+$mailFromEmail = $_ENV['MAIL_FROM_EMAIL'] ?? 'noreply@security2.com';
+$otpExpiry = (int)($_ENV['OTP_EXPIRY_MINUTES'] ?? 2);
+
+// Configuration based on service
+if ($mailService === 'mailtrap') {
+    // Mailtrap configuration
+    define('EMAIL_CONFIG', [
+        'smtp_host'     => $_ENV['MAILTRAP_HOST'] ?? 'smtp.mailtrap.io',
+        'smtp_port'     => (int)($_ENV['MAILTRAP_PORT'] ?? 2525),
+        'smtp_username' => $_ENV['MAILTRAP_USERNAME'] ?? '',
+        'smtp_password' => $_ENV['MAILTRAP_PASSWORD'] ?? '',
+        'from_email'    => $mailFromEmail,
+        'from_name'     => $mailFromName,
+        'smtp_secure'   => 'tls',
+        'otp_expiry'    => $otpExpiry,
+        'service'       => 'mailtrap'
+    ]);
+} else {
+    // Gmail configuration (default)
+    define('EMAIL_CONFIG', [
+        'smtp_host'     => 'smtp.gmail.com',
+        'smtp_port'     => 587,
+        'smtp_username' => $_ENV['GMAIL_EMAIL'] ?? '',
+        'smtp_password' => $_ENV['GMAIL_APP_PASSWORD'] ?? '',
+        'from_email'    => $mailFromEmail,
+        'from_name'     => $mailFromName,
+        'smtp_secure'   => 'tls',
+        'otp_expiry'    => $otpExpiry,
+        'service'       => 'gmail'
+    ]);
+}
 
 // Validate configuration
 if (empty(EMAIL_CONFIG['smtp_username']) || empty(EMAIL_CONFIG['smtp_password'])) {
-    error_log('WARNING: Gmail credentials not configured in .env file');
+    error_log('WARNING: Email credentials not configured in .env file');
 }
 
 ?>

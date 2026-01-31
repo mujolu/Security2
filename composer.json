@@ -1,0 +1,8 @@
+{
+  "name": "mujolu/security2",
+  "description": "User validation integrating OTP, Role-based, Logs into the system",
+  "require": {
+    "phpmailer/phpmailer": "^6.9",
+    "vlucas/phpdotenv": "^5.5"
+  }
+}

@@ -1,12 +1,4 @@
 
-function loadCheckCredentialsScript(callback) {
-    const script = document.createElement('script');
-    script.src = '/JANNELLE/js/checkCredentials.js'; // Replace with the actual path to checkCredentials.js
-    script.type = 'text/javascript';
-    script.onload = callback; // Optional: Runs when the script is loaded
-    document.head.appendChild(script);
-}
-
 document.addEventListener('DOMContentLoaded', function () {
     // credentials email/paass
     const usernameField = document.getElementById('username');
@@ -20,7 +12,7 @@ document.addEventListener('DOMContentLoaded', function () {
     const cityField = document.getElementById('city');
     const provinceField = document.getElementById('province');
     const countryField = document.getElementById('country');
-    const zipCodeField = document.getElementById('zipcode');
+    const zipCodeField = document.getElementById('zip_code');
     const form = document.getElementById('registrationForm');
     const id = document.getElementById('id');
     const first_name = document.getElementById('first_name');
@@ -39,10 +31,8 @@ document.addEventListener('DOMContentLoaded', function () {
     confirmPasswordField.disabled = true;
 
 
-    loadCheckCredentialsScript(() => {
-        console.log('checkCredentials.js loaded successfully.');
-        // Call any function from checkCredentials.js if necessary
-    });
+    // `checkCredentials.js` is loaded via a script tag in the page; its functions
+    // are expected to be available before this script runs.
 
     // Function to show inline error message
     function showError(field, message) {
@@ -479,7 +469,7 @@ if (invalidWords.length > 0) {
             }
         });
     
-        const zipCodeField = document.getElementById('zipcode');
+        const zipCodeField = document.getElementById('zip_code');
     
         // Validate the zip code field
         if (!validateZipCode(zipCodeField)) {

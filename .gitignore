@@ -1,0 +1,44 @@
+# Environment variables - NEVER commit credentials
+.env
+.env.local
+.env.*.local
+
+# Composer
+vendor/
+composer.lock
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Logs
+*.log
+error_log
+access_log
+
+# Temporary files
+*.tmp
+temp/
+tmp/
+
+# Session files
+sessions/
+
+# Database files
+*.sqlite
+*.db
+
+# OS files
+Thumbs.db
+.DS_Store
+
+# Node modules (if using npm)
+node_modules/
+
+# Build artifacts
+dist/
+build/
