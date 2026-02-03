@@ -38,21 +38,15 @@ document.addEventListener('DOMContentLoaded', function () {
     const logoutLink = document.getElementById('logoutLink');
 
     let consecutiveErrors = 0;
-    let lockoutTime = parseFloat(localStorage.getItem('lockoutTime')) || 0;
-    let lockoutAttempts = parseInt(localStorage.getItem('lockoutAttempts'), 10) || 0;
-    let finalAttempt = localStorage.getItem('finalAttempt') === 'true';
+    let lockoutTime = 0;
+    let lockoutAttempts = 0;
+    let finalAttempt = false;
+
 
     const errorTimes = [15, 30, 60]; // Lockout durations in seconds after 3 attempts
 
     // Save state to localStorage
-    function saveState() {
-        localStorage.setItem('lockoutTime', lockoutTime);
-        localStorage.setItem('lockoutAttempts', lockoutAttempts);
-        localStorage.setItem('finalAttempt', finalAttempt);
-        localStorage.setItem('consecutiveErrors', consecutiveErrors);
-        localStorage.setItem('username', usernameField.value);
-        localStorage.setItem('password', passwordField.value);
-    }
+
 
     // Clear state from localStorage
     function clearState() {
@@ -64,17 +58,6 @@ document.addEventListener('DOMContentLoaded', function () {
         localStorage.removeItem('password');
     }
 
-    // Reset fields to saved values
-    function restoreFields() {
-        const savedUsername = localStorage.getItem('username');
-        const savedPassword = localStorage.getItem('password');
-        if (savedUsername) {
-            usernameField.value = savedUsername;
-        }
-        if (savedPassword) {
-            passwordField.value = savedPassword;
-        }
-    }
 
     function resetFields() {
         usernameField.value = '';
@@ -253,6 +236,5 @@ document.addEventListener('DOMContentLoaded', function () {
         });
     }
 
-    // restoreFields();
     isLockedOut();
 });
