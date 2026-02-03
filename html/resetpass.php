@@ -55,7 +55,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['step1_submit'])) {
 
             // Generate OTP and send via Mailtrap/email helper
             $otp = rand(100000, 999999);
-            $_SESSION['recovery_otp'] = $otp;
+            // $_SESSION['recovery_otp'] = $otp;
+            $otp = random_int(100000, 999999);
+            $otpHash = password_hash($otp, PASSWORD_DEFAULT);
+            $expiresAt = date('Y-m-d H:i:s', time() + 600); // 10 minutes
+
+            $insert = $conn->prepare("
+                INSERT INTO reset_password (user_id, email, otp_hash, expires_at)
+                VALUES (:uid, :email, :otp, :exp)
+            ");
+            $insert->execute([
+                 ':uid'   => $user['id'],
+                 ':email'=> $user['email'],
+                 ':otp'  => $otpHash,
+                 ':exp'  => $expiresAt
+            ]);
+
 
             // Send OTP via Gmail OAuth2 or email helper
             require_once 'email_helper.php';

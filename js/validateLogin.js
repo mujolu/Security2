@@ -1,9 +1,11 @@
 document.addEventListener('DOMContentLoaded', function () {
     // Prevent back button navigation
     window.history.pushState(null, null, window.location.href);
-    setInterval(function () {
-        window.history.pushState(null, null, window.location.href);
-    }, 100);
+   
+   // setInterval(function () {
+        //window.history.pushState(null, null, window.location.href);
+    //}, 100);
+
 
     window.onpopstate = function () {
         window.history.pushState(null, null, window.location.href);
