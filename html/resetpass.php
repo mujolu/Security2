@@ -95,26 +95,59 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['step1_submit'])) {
     }
 }
 
-// Step 2: OTP verification
+// Step 2: OTP verification (DATABASE-BASED)
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['step2_submit'])) {
     $entered_otp = isset($_POST['otp']) ? trim($_POST['otp']) : '';
 
     if (empty($entered_otp)) {
         $error = "Please enter the OTP.";
-    } elseif (isset($_SESSION['recovery_otp']) && $entered_otp == $_SESSION['recovery_otp']) {
-        $_SESSION['otp_verified'] = true;
-        // If user has security questions set, go to step 3, otherwise skip to step 4
-        if (!empty($_SESSION['has_security'])) {
-            $_SESSION['recovery_step'] = 3;
-            $success = "OTP verified! Please answer the security questions.";
-        } else {
-            $_SESSION['recovery_step'] = 4;
-            $success = "OTP verified! You may reset your password.";
-        }
     } else {
-        $error = "Invalid OTP. Please try again.";
+
+        // Fetch latest OTP for this user/email
+        $stmt = $conn->prepare("
+            SELECT id, otp_hash, expires_at, used
+            FROM reset_password
+            WHERE email = :email
+            ORDER BY created_at DESC
+            LIMIT 1
+        ");
+        $stmt->execute([
+            ':email' => $_SESSION['recovery_email']
+        ]);
+
+        $otpRow = $stmt->fetch(PDO::FETCH_ASSOC);
+
+        if (!$otpRow) {
+            $error = "No OTP request found.";
+        } elseif ($otpRow['used'] == 1) {
+            $error = "This OTP has already been used.";
+        } elseif (strtotime($otpRow['expires_at']) < time()) {
+            $error = "OTP has expired.";
+        } elseif (!password_verify($entered_otp, $otpRow['otp_hash'])) {
+            $error = "Invalid OTP. Please try again.";
+        } else {
+            // OTP is valid — mark as used
+            $update = $conn->prepare("
+                UPDATE reset_password
+                SET used = 1
+                WHERE id = :id
+            ");
+            $update->execute([':id' => $otpRow['id']]);
+
+            $_SESSION['otp_verified'] = true;
+
+            // Go to next step
+            if (!empty($_SESSION['has_security'])) {
+                $_SESSION['recovery_step'] = 3;
+                $success = "OTP verified! Please answer the security questions.";
+            } else {
+                $_SESSION['recovery_step'] = 4;
+                $success = "OTP verified! You may reset your password.";
+            }
+        }
     }
 }
+
 
 // Step 3: Security questions verification
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['step3_submit'])) {

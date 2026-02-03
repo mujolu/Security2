@@ -169,7 +169,7 @@ document.addEventListener('DOMContentLoaded', function () {
 
     function handleFailedLoginAttempt() {
         consecutiveErrors++;
-        saveState();
+       // saveState();
         if (consecutiveErrors >= 2) {
             showForgotPasswordLink();
         }
@@ -182,7 +182,7 @@ document.addEventListener('DOMContentLoaded', function () {
                 lockoutTime = new Date().getTime() / 1000 + errorTimes[2];
                 finalAttempt = true;
             }
-            saveState();
+        //    saveState();
             showLockoutMessage(Math.ceil(lockoutTime - (new Date().getTime() / 1000)));
             consecutiveErrors = 0;
         }
@@ -253,6 +253,6 @@ document.addEventListener('DOMContentLoaded', function () {
         });
     }
 
-    restoreFields();
+    // restoreFields();
     isLockedOut();
 });
