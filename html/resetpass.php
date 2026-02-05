@@ -7,6 +7,13 @@ if (!isset($_SESSION['recovery_step'])) {
     $_SESSION['recovery_step'] = 1;
 }
 
+if (isset($_POST['back_step'])) {
+    if ($_SESSION['recovery_step'] > 1) {
+        $_SESSION['recovery_step']--;
+    }
+}
+
+
 // Handle form submissions
 $error = '';
 $success = '';
@@ -28,6 +35,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['step1_submit'])) {
             $_SESSION['recovery_user_id'] = $user['id'];
             $_SESSION['recovery_email'] = $user['email'];
             $_SESSION['recovery_step'] = 2;
+            unset($_SESSION['otp_verified']);
 
             // Determine if account has security questions set (check columns and values)
             $hasSecurity = false;
@@ -138,7 +146,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['step2_submit'])) {
 
             // Go to next step
             if (!empty($_SESSION['has_security'])) {
-                $_SESSION['recovery_step'] = 3;
+                $_SESSION['recovery_step'] == 3 && isset($_SESSION['otp_verified']);
                 $success = "OTP verified! Please answer the security questions.";
             } else {
                 $_SESSION['recovery_step'] = 4;
@@ -463,11 +471,13 @@ if (isset($_POST['back_step'])) {
     <?php endif; ?>
 
     <!-- Step 2: OTP Verification -->
-    <?php if ($_SESSION['recovery_step'] >= 2 && isset($_SESSION['recovery_email'])): ?>
+    <?php if ($_SESSION['recovery_step'] == 2 && !isset($_SESSION['otp_verified'])): ?>
+
         <form method="POST">
             <div class="form-group">
                 <label for="otp">Enter OTP</label>
                 <p style="font-size: 12px; color: #999; margin-bottom: 10px;">An OTP has been sent to <?php echo htmlspecialchars($_SESSION['recovery_email']); ?></p>
+                <p id="otpTimer" style="color: #d9534f; font-size: 13px; margin-bottom: 10px;"></p>
                 <input type="text" id="otp" name="otp" placeholder="Enter 6-digit OTP" maxlength="6" required>
             </div>
 
@@ -476,10 +486,17 @@ if (isset($_POST['back_step'])) {
                 <button type="submit" name="step2_submit" class="btn-submit">Verify OTP</button>
             </div>
         </form>
+        <?php if (isset($_SESSION['otp_expires'])): ?>
+            <script>
+                const otpExpiryTime = <?= strtotime($_SESSION['otp_expires']) ?> * 1000; // convert to ms
+            </script>
+        <?php endif; ?>
+
     <?php endif; ?>
 
     <!-- Step 3: Security Questions -->
-    <?php if ($_SESSION['recovery_step'] >= 3 && isset($_SESSION['otp_verified'])): ?>
+    <?php if ($_SESSION['recovery_step'] == 3 && isset($_SESSION['otp_verified'])): ?>
+
         <form method="POST">
             <p style="margin-bottom: 20px; color: #666; text-align: center;">Answer at least 2 out of 3 security questions correctly</p>
 
