@@ -7,10 +7,8 @@ if (!isset($_SESSION['recovery_step'])) {
     $_SESSION['recovery_step'] = 1;
 }
 
-if (isset($_POST['back_step'])) {
-    if ($_SESSION['recovery_step'] > 1) {
-        $_SESSION['recovery_step']--;
-    }
+if (isset($_POST['back_step']) && $_SESSION['recovery_step'] > 1) {
+    $_SESSION['recovery_step']--;
 }
 
 
@@ -60,14 +58,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['step1_submit'])) {
                 // ignore; treat as no security questions
             }
             $_SESSION['has_security'] = $hasSecurity;
+           
+
 
             // Generate OTP and send via Mailtrap/email helper
-            $otp = rand(100000, 999999);
-            // $_SESSION['recovery_otp'] = $otp;
             $otp = random_int(100000, 999999);
+            // $_SESSION['recovery_otp'] = $otp;
             $otpHash = password_hash($otp, PASSWORD_DEFAULT);
-            $expiresAt = date('Y-m-d H:i:s', time() + 600); // 10 minutes
-
+            $expiresAt = date('Y-m-d H:i:s', time() + 60); // 1 minute
+         
             $insert = $conn->prepare("
                 INSERT INTO reset_password (user_id, email, otp_hash, expires_at)
                 VALUES (:uid, :email, :otp, :exp)
@@ -79,6 +78,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['step1_submit'])) {
                  ':exp'  => $expiresAt
             ]);
 
+            $_SESSION['otp_expires'] = $expiresAt;
 
             // Send OTP via Gmail OAuth2 or email helper
             require_once 'email_helper.php';
@@ -87,9 +87,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['step1_submit'])) {
             // Use Gmail OAuth2 if configured
             $mailService = $_ENV['MAIL_SERVICE'] ?? 'mailtrap';
             if ($mailService === 'gmail_oauth2') {
-                $result = sendOTPViaGmail($user['email'], $otp, 10); // 10 minutes expiry
+                $result = sendOTPViaGmail($user['email'], $otp, 1); // 10 minutes expiry
             } else {
-                $result = sendOTPEmail($user['email'], $otp, 10); // Fallback to email_helper
+                $result = sendOTPEmail($user['email'], $otp, 1); // Fallback to email_helper
             }
 
             if ($result['success']) {
@@ -102,6 +102,54 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['step1_submit'])) {
         }
     }
 }
+
+// Resend OTP handler
+// RESEND OTP (Step 2)
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['resend_otp'])) {
+
+    if (!isset($_SESSION['recovery_email'], $_SESSION['recovery_user_id'])) {
+        $error = "Session expired. Please start again.";
+    } else {
+
+        // Generate new OTP
+        $otp = random_int(100000, 999999);
+        $otpHash = password_hash($otp, PASSWORD_DEFAULT);
+        $expiresAt = date('Y-m-d H:i:s', time() + 60); // 1 minute
+
+        // Save OTP
+        $insert = $conn->prepare("
+            INSERT INTO reset_password (user_id, email, otp_hash, expires_at)
+            VALUES (:uid, :email, :otp, :exp)
+        ");
+        $insert->execute([
+            ':uid'   => $_SESSION['recovery_user_id'],
+            ':email' => $_SESSION['recovery_email'],
+            ':otp'   => $otpHash,
+            ':exp'   => $expiresAt
+        ]);
+
+        $_SESSION['otp_expires'] = $expiresAt;
+        unset($_SESSION['otp_verified']);
+
+        // Send email
+        require_once 'email_helper.php';
+        require_once 'gmail_oauth2_helper.php';
+
+        $mailService = $_ENV['MAIL_SERVICE'] ?? 'mailtrap';
+        $result = ($mailService === 'gmail_oauth2')
+            ? sendOTPViaGmail($_SESSION['recovery_email'], $otp, 1)
+            : sendOTPEmail($_SESSION['recovery_email'], $otp, 1);
+
+        if ($result['success']) {
+            $success = "A new OTP has been sent to your email.";
+            $_SESSION['recovery_step'] = 2; // stay on OTP step
+        } else {
+            $error = "Error sending OTP: " . $result['message'];
+        }
+    }
+}
+
+            
 
 // Step 2: OTP verification (DATABASE-BASED)
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['step2_submit'])) {
@@ -146,7 +194,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['step2_submit'])) {
 
             // Go to next step
             if (!empty($_SESSION['has_security'])) {
-                $_SESSION['recovery_step'] == 3 && isset($_SESSION['otp_verified']);
+                $_SESSION['recovery_step'] = 3;
                 $success = "OTP verified! Please answer the security questions.";
             } else {
                 $_SESSION['recovery_step'] = 4;
@@ -473,19 +521,70 @@ if (isset($_POST['back_step'])) {
     <!-- Step 2: OTP Verification -->
     <?php if ($_SESSION['recovery_step'] == 2 && !isset($_SESSION['otp_verified'])): ?>
 
-        <form method="POST">
-            <div class="form-group">
-                <label for="otp">Enter OTP</label>
-                <p style="font-size: 12px; color: #999; margin-bottom: 10px;">An OTP has been sent to <?php echo htmlspecialchars($_SESSION['recovery_email']); ?></p>
-                <p id="otpTimer" style="color: #d9534f; font-size: 13px; margin-bottom: 10px;"></p>
-                <input type="text" id="otp" name="otp" placeholder="Enter 6-digit OTP" maxlength="6" required>
-            </div>
+    <form method="POST">
+        <div class="form-group">
+            <label for="otp">Enter OTP</label>
+            <p style="font-size: 12px; color: #999;">
+                An OTP has been sent to <?= htmlspecialchars($_SESSION['recovery_email']) ?>
+            </p>
 
-            <div class="button-group">
-                <button type="submit" name="back_step" class="btn-back">Back</button>
-                <button type="submit" name="step2_submit" class="btn-submit">Verify OTP</button>
-            </div>
-        </form>
+            <p id="otpTimer" style="color:#d9534f;font-size:13px;">
+                Loading timer...
+            </p>
+
+            <input type="text" id="otp" name="otp" placeholder="Enter 6-digit OTP" maxlength="6">
+        </div>
+
+        <div class="button-group">
+            <button type="submit" name="back_step" class="btn-back">Back</button>
+            <button type="submit" name="step2_submit" class="btn-submit">Verify OTP</button>
+        </div>
+
+        <!-- Resend button (hidden initially) -->
+        <button
+            type="submit"
+            name="resend_otp"
+            id="resendBox"
+            class="btn-secondary"
+            style="display:none;"
+            formnovalidate
+        >
+            Resend OTP
+        </button>
+    </form>
+
+
+    <script>
+    document.addEventListener('DOMContentLoaded', function () {
+
+        const expiryTime = <?= strtotime($_SESSION['otp_expires'] ?? 'now') ?> * 1000;
+        const timerEl = document.getElementById('otpTimer');
+        const resendBox = document.getElementById('resendBox');
+
+        function updateTimer() {
+            const now = Date.now();
+            const diff = expiryTime - now;
+
+            if (diff <= 0) {
+                timerEl.textContent = "OTP expired.";
+                resendBox.style.display = "inline-block";
+                return;
+            }
+
+            const minutes = Math.floor(diff / 60000);
+            const seconds = Math.floor((diff % 60000) / 1000);
+
+            timerEl.textContent =
+                `OTP expires in ${minutes}:${seconds.toString().padStart(2, '0')}`;
+
+            setTimeout(updateTimer, 1000);
+        }
+
+        updateTimer();
+    });
+    </script>
+
+
         <?php if (isset($_SESSION['otp_expires'])): ?>
             <script>
                 const otpExpiryTime = <?= strtotime($_SESSION['otp_expires']) ?> * 1000; // convert to ms
@@ -495,7 +594,7 @@ if (isset($_POST['back_step'])) {
     <?php endif; ?>
 
     <!-- Step 3: Security Questions -->
-    <?php if ($_SESSION['recovery_step'] == 3 && isset($_SESSION['otp_verified'])): ?>
+    <?php if ($_SESSION['recovery_step'] == 3): ?>
 
         <form method="POST">
             <p style="margin-bottom: 20px; color: #666; text-align: center;">Answer at least 2 out of 3 security questions correctly</p>
