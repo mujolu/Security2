@@ -140,164 +140,146 @@ $username = $_SESSION['username'];
     </style>
 </head>
 
-<body>
-    <div class="layout">
+<body class="bg-gray-100 min-h-screen">
+    <div class="layout flex w-full min-h-screen">
     <!-- Sidebar -->
-    <aside class="w-64 bg-gray-800 min-h-screen p-6">
-        <h2 class="text-2xl font-bold text-white mb-5">ARTLAB</h2>
-        <div class="flex flex-col items-center justify-center text-center mt-8">
-            
-            <!-- Circle Image -->
-            <img
-                src="/Security2/images/profilepic.jpg"
-                alt="Profile"
-                class="w-24 h-24 rounded-full object-cover border-4 border-yellow-500 shadow-md mb-4"
-            >
 
-            <!-- Welcome Text -->
-            <h4 class="text-white font-semibold mb-3">
-                Welcome, <?php echo htmlspecialchars($username); ?>!
-            </h4>
+    <aside class="w-64 bg-gray-800 min-h-screen p-6 flex flex-col">
+        <h2 class="text-2xl font-bold text-white mb-5">ARTLAB</h2>
+
+        <div class="flex flex-col items-center text-center mt-8">
+            <img src="/Security2/images/profilepic.jpg" alt="Profile" class="w-24 h-24 rounded-full object-cover border-4 border-yellow-500 shadow-md mb-4">
+            <h4 class="text-white font-semibold mb-3">Welcome, <?php echo htmlspecialchars($username); ?>!</h4>
         </div>
 
-<nav class="flex flex-col gap-4">
-            <!-- Dashboard -->
-            <a href="#" class="bg-gray-700 text-white rounded-lg px-4 py-3 font-medium hover:bg-yellow-700 transition-colors duration-300">
+        <nav class="flex flex-col gap-4 mt-8">
+            <a href="#" onclick="showSection('dashboard', this)" 
+               class="sidebar-link bg-yellow-700 text-white rounded-lg px-4 py-3 font-medium hover:bg-yellow-600 transition-colors duration-300">
                 Dashboard
             </a>
-
-            <!-- Projects -->
-            <a href="#" class="bg-gray-700 text-white rounded-lg px-4 py-3 font-medium hover:bg-yellow-700 transition-colors duration-300">
+            <a href="#" onclick="showSection('projects', this)" 
+               class="sidebar-link bg-gray-700 text-white rounded-lg px-4 py-3 font-medium hover:bg-yellow-700 transition-colors duration-300">
                 Projects
             </a>
-
-            <!-- Gallery -->
-            <a href="#" class="bg-gray-700 text-white rounded-lg px-4 py-3 font-medium hover:bg-yellow-700 transition-colors duration-300">
+            <a href="#" onclick="showSection('gallery', this)" 
+               class="sidebar-link bg-gray-700 text-white rounded-lg px-4 py-3 font-medium hover:bg-yellow-700 transition-colors duration-300">
                 Gallery
             </a>
-
-            <!-- Settings -->
-            <a href="#" class="bg-gray-700 text-white rounded-lg px-4 py-3 font-medium hover:bg-yellow-700 transition-colors duration-300">
+            <a href="#" onclick="showSection('settings', this)" 
+               class="sidebar-link bg-gray-700 text-white rounded-lg px-4 py-3 font-medium hover:bg-yellow-700 transition-colors duration-300">
                 Settings
             </a>
         </nav>
     </aside>
 
 
-    <!-- Main Content -->
-    <main class="main-content">
+<!-- Main Content -->
+    <main class="flex-1 p-6 bg-gray-100">
 
-    <header class="bg-gray-800 text-white rounded-xl shadow-md p-8 mb-5 relative overflow-visible flex justify-between items-center mt-10">        
-        <!-- Header Text -->
-        <h3 class="text-xl font-bold z-10 relative">
-            Welcome to <span class="text-yellow-500 brand-sketchy">ARTLAB!</span>
-        </h3>
-
-        <!-- Logout Button -->
-        <a href="logOut.php" class="bg-gray-700 px-4 py-2 rounded-lg font-medium hover:bg-yellow-700 transition-colors duration-300 z-10 relative">
-            Logout
-        </a>
-
-        <!-- Cartoon Character Image -->
-       <img
-        src="/Security2/images/welcome png.png"
-        alt="Welcoming artist"
-        class="absolute left-1/2 -translate-x-[98%] -bottom-14
-                h-48 md:h-56 lg:h-64
-                opacity-95 drop-shadow-xl z-0 pointer-events-none"
-        />
+        <!-- Header -->
+        <header class="bg-gray-800 text-white rounded-xl shadow-md p-8 mb-5 relative flex justify-between items-center mt-10">
+            <h3 class="text-xl font-bold z-10 relative">
+                Welcome to <span class="text-yellow-500 brand-sketchy">ARTLAB!</span>
+            </h3>
+            <a href="logOut.php" class="bg-gray-700 px-4 py-2 rounded-lg font-medium hover:bg-yellow-700 transition-colors duration-300 z-10 relative">
+                Logout
+            </a>
+            <img src="/Security2/images/welcome png.png" alt="Welcoming artist"
+                 class="absolute left-1/2 -translate-x-[98%] -bottom-14 h-48 md:h-56 lg:h-64 opacity-95 drop-shadow-xl z-0 pointer-events-none"/>
         </header>
 
+        <!-- Dashboard Section -->
+        <section id="dashboard" class="">
+            <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-6 mb-8">
+                <div class="bg-indigo-300 text-indigo-800 shadow-lg rounded-xl p-6 flex items-center gap-4 hover:scale-105 transform transition-all duration-300">
+                    <div class="bg-indigo-200 p-3 rounded-full">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4-4-4-4m12 8l4-4-4-4"/>
+                        </svg>
+                    </div>
+                    <div>
+                        <h4 class="text-sm font-medium">Artworks</h4>
+                        <p class="text-2xl font-bold mt-1">12</p>
+                    </div>
+                </div>
 
-    <!-- Main Content Section -->
-    <div class="container">
-        <p>You have successfully logged in.</p>
-    </div>
+                <div class="bg-green-200 text-green-800 shadow-lg rounded-xl p-6 flex items-center gap-4 hover:scale-105 transform transition-all duration-300">
+                    <div class="bg-green-200 p-3 rounded-full">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 21v-2a4 4 0 00-8 0v2M12 7a4 4 0 100-8 4 4 0 000 8z"/>
+                        </svg>
+                    </div>
+                    <div>
+                        <h4 class="text-sm font-medium">Collaborations</h4>
+                        <p class="text-2xl font-bold mt-1">5</p>
+                    </div>
+                </div>
 
-    <!-- Dashboard -->
-    <section class="dashboard">
-
-        <!-- Stats -->
-        <!-- Stats Section -->
-        <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-6 mb-8">
-
-        <!-- Artworks Card -->
-        <div class="bg-indigo-300 text-indigo-800 shadow-lg rounded-xl p-6 flex items-center gap-4 hover:scale-105 transform transition-all duration-300">
-            <!-- Icon -->
-            <div class="bg-indigo-200 p-3 rounded-full">
-            <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4-4-4-4m12 8l4-4-4-4" />
-            </svg>
+                <div class="bg-yellow-200 text-yellow-800 shadow-lg rounded-xl p-6 flex items-center gap-4 hover:scale-105 transform transition-all duration-300">
+                    <div class="bg-yellow-200 p-3 rounded-full">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8c-3.866 0-7 3.134-7 7h14c0-3.866-3.134-7-7-7z"/>
+                        </svg>
+                    </div>
+                    <div>
+                        <h4 class="text-sm font-medium">Sales</h4>
+                        <p class="text-2xl font-bold mt-1">₱2,500</p>
+                    </div>
+                </div>
             </div>
-            <!-- Text -->
-            <div>
-            <h4 class="text-sm font-medium">Artworks</h4>
-            <p class="text-2xl font-bold mt-1">12</p>
-            </div>
-        </div>
+        </section>
 
-        <!-- Collaborations Card -->
-        <div class="bg-green-200 text-green-800 shadow-lg rounded-xl p-6 flex items-center gap-4 hover:scale-105 transform transition-all duration-300">
-            <!-- Icon -->
-            <div class="bg-green-200 p-3 rounded-full">
-            <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 21v-2a4 4 0 00-8 0v2M12 7a4 4 0 100-8 4 4 0 000 8z" />
-            </svg>
-            </div>
-            <!-- Text -->
-            <div>
-            <h4 class="text-sm font-medium">Collaborations</h4>
-            <p class="text-2xl font-bold mt-1">5</p>
-            </div>
-        </div>
+        <!-- Projects Section (hidden) -->
+        <section id="projects" class="hidden">
+            <h2 class="text-2xl font-bold mb-4">Projects</h2>
+            <p>Projects section coming soon...</p>
+        </section>
 
-        <!-- Sales Card -->
-        <div class="bg-yellow-200 text-yellow-800 shadow-lg rounded-xl p-6 flex items-center gap-4 hover:scale-105 transform transition-all duration-300">
-            <!-- Icon -->
-            <div class="bg-yellow-200 p-3 rounded-full">
-            <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8c-3.866 0-7 3.134-7 7h14c0-3.866-3.134-7-7-7z" />
-            </svg>
-            </div>
-            <!-- Text -->
-            <div>
-            <h4 class="text-sm font-medium">Sales</h4>
-            <p class="text-2xl font-bold mt-1">₱2,500</p>
-            </div>
-        </div>
+        <!-- Gallery Section (hidden) -->
+        <section id="gallery" class="hidden">
+            <h2 class="text-2xl font-bold mb-4">Gallery</h2>
+            <p>Gallery section coming soon...</p>
+        </section>
 
-        </div>
+        <!-- Settings Section (hidden) -->
+        <section id="settings" class="hidden bg-white rounded-xl shadow-lg w-full max-w-3xl p-6 mx-auto mb-10">
+           <?php include 'user_settings.php'; ?>
+        </section>
 
-
-
-        <!-- Collaboration / Artwork Area -->
-<!-- Art / Collaboration Grid -->
-        <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-6">
-
-        <!-- Add Artwork Card -->
-        <div class="flex flex-col items-center justify-center h-48 bg-white border-2 border-dashed border-gray-300 rounded-xl cursor-pointer hover:border-indigo-500 hover:scale-105 transform transition-all duration-300">
-            <span class="text-5xl text-gray-400">+</span>
-            <p class="mt-2 text-gray-500 font-medium">Add Artwork</p>
-        </div>
-
-        <!-- Artwork Card 1 -->
-        <div class="bg-white rounded-xl shadow-lg p-4 h-48 flex flex-col justify-end hover:shadow-2xl transition-shadow duration-300">
-            <p class="font-bold text-lg text-gray-900">Abstract Thoughts</p>
-            <p class="text-gray-500 text-sm mt-1">by You</p>
-        </div>
-
-        <!-- Artwork Card 2 -->
-        <div class="bg-white rounded-xl shadow-lg p-4 h-48 flex flex-col justify-end hover:shadow-2xl transition-shadow duration-300">
-            <p class="font-bold text-lg text-gray-900">Collab: Night City</p>
-            <p class="text-gray-500 text-sm mt-1">3 artists</p>
-        </div>
-
-        </div>
-
-
-    </section>
-   
     </main>
+    <script>
+    function showSection(sectionId, link) {
+    // Hide all sections
+    ['dashboard','projects','gallery','settings'].forEach(id=>{
+        document.getElementById(id).classList.add('hidden');
+    });
+
+    // Show selected section
+    document.getElementById(sectionId).classList.remove('hidden');
+
+    // Update sidebar active link
+    document.querySelectorAll('.sidebar-link').forEach(l=>{
+        l.classList.remove('bg-yellow-700');
+        l.classList.add('bg-gray-700');
+    });
+
+    if(link) {
+        link.classList.remove('bg-gray-700');
+        link.classList.add('bg-yellow-700');
+    }
+}
+
+    // Set default visible section
+<?php
+$defaultSection = 'dashboard';
+if (isset($_POST['edit_mode']) && $_POST['edit_mode'] == 1) {
+    $defaultSection = 'settings';
+}
+?>
+    showSection('<?= $defaultSection ?>');
+    </script>
+
+
 </div>
 
 
@@ -325,6 +307,7 @@ $username = $_SESSION['username'];
             }
         });
     </script>
+
 
 </body>
 
