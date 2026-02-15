@@ -36,14 +36,19 @@ $username = $user_row['username'] ?? "Unknown User";
 <body class="bg-gray-100 min-h-screen">
 
 <!-- 🔥 HEADER (same as dashboard) -->
-<header class="bg-gray-800 text-white p-6 flex justify-between items-center shadow-lg">
-    <h1 class="text-2xl font-bold">ARTLAB Admin</h1>
-
+<header class="bg-gray-800 text-white p-6 flex items-center justify-between shadow-lg">
+    <!-- LEFT: Back button -->
     <a href="admin_dashboard.php"
        class="bg-yellow-600 px-4 py-2 rounded hover:bg-yellow-700 transition">
-       ← Back to Dashboard
+       ← Back
     </a>
+    <!-- CENTER: Title -->
+    <h1 class="text-2xl font-bold mx-auto">ARTLAB Admin</h1>
+
+    <!-- RIGHT: Empty spacer -->
+    <div class="w-24"></div>
 </header>
+
 
 <!-- 🧠 MAIN CONTENT -->
 <div class="max-w-6xl mx-auto mt-8">
@@ -64,24 +69,24 @@ $username = $user_row['username'] ?? "Unknown User";
 
             <thead class="bg-gray-800 text-white">
                 <tr>
-                    <th class="p-3">Device</th>
-                    <th class="p-3">IP Address</th>
-                    <th class="p-3">Location</th>
-                    <th class="p-3">Email Used</th>
-                    <th class="p-3">Login Time</th>
-                    <th class="p-3">Logout Time</th>
+                    <th class="p-3 border-b border-blue-800">Device</th>
+                    <th class="p-3 border-b border-blue-800">IP Address</th>
+                    <th class="p-3 border-b border-blue-800">Location</th>
+                    <th class="p-3 border-b border-blue-800">Email Used</th>
+                    <th class="p-3 border-b border-blue-800">Login Time</th>
+                    <th class="p-3 border-b border-blue-800">Logout Time</th>
                 </tr>
             </thead>
 
             <tbody>
             <?php foreach ($logs as $log): ?>
                 <tr class="text-center border-b hover:bg-gray-100">
-                    <td class="p-3"><?= htmlspecialchars($log['device']) ?></td>
-                    <td class="p-3"><?= htmlspecialchars($log['ip_address']) ?></td>
-                    <td class="p-3"><?= htmlspecialchars($log['location']) ?></td>
-                    <td class="p-3"><?= htmlspecialchars($log['email_used']) ?></td>
-                    <td class="p-3"><?= $log['login_time'] ?></td>
-                    <td class="p-3">
+                    <td class="p-3 border-b border-blue-800"><?= htmlspecialchars($log['device']) ?></td>
+                    <td class="p-3 border-b border-blue-800"><?= htmlspecialchars($log['ip_address']) ?></td>
+                    <td class="p-3 border-b border-blue-800"><?= htmlspecialchars($log['location']) ?></td>
+                    <td class="p-3 border-b border-blue-800"><?= htmlspecialchars($log['email_used']) ?></td>
+                    <td class="p-3 border-b border-blue-800"><?= $log['login_time'] ?></td>
+                    <td class="p-3 border-b border-blue-800">
                         <?= $log['logout_time'] ?? '<span class="text-green-600 font-semibold">Still logged in</span>' ?>
                     </td>
                 </tr>
