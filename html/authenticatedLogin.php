@@ -7,15 +7,14 @@ header("Cache-Control: no-store, no-cache, must-revalidate, max-age=0");
 header("Cache-Control: post-check=0, pre-check=0", false);
 header("Pragma: no-cache");
 
-// Check if the user is authenticated
-if (!isset($_SESSION['username'])) {
-    // If the user is not logged in, redirect them to the login page
+// Check if the user is logged in and is an artist
+if (!isset($_SESSION['username']) || !isset($_SESSION['role']) || strtolower($_SESSION['role']) !== 'artist') {
     header("Location: login.php");
     exit();
 }
 
-// Get the user's name from the session
-$username = $_SESSION['username']; 
+// Get the username safely
+$username = $_SESSION['username'];
 ?>
 
 <!DOCTYPE html>
@@ -153,17 +152,21 @@ $username = $_SESSION['username'];
         </div>
 
         <nav class="flex flex-col gap-4 mt-8">
-            <a href="#" onclick="showSection('dashboard', this)" 
+            <a href="#" onclick="showSection('artworkgallery', this)" 
                class="sidebar-link bg-yellow-700 text-white rounded-lg px-4 py-3 font-medium hover:bg-yellow-600 transition-colors duration-300">
-                Dashboard
+                Artwork Gallery
             </a>
-            <a href="#" onclick="showSection('projects', this)" 
+            <a href="#" onclick="showSection('collaborations', this)" 
                class="sidebar-link bg-gray-700 text-white rounded-lg px-4 py-3 font-medium hover:bg-yellow-700 transition-colors duration-300">
-                Projects
+                Collaborations
             </a>
-            <a href="#" onclick="showSection('gallery', this)" 
+            <a href="#" onclick="showSection('marketplace', this)" 
                class="sidebar-link bg-gray-700 text-white rounded-lg px-4 py-3 font-medium hover:bg-yellow-700 transition-colors duration-300">
-                Gallery
+                Marketplace
+            </a>
+                <a href="#" onclick="showSection('sales', this)" 
+               class="sidebar-link bg-gray-700 text-white rounded-lg px-4 py-3 font-medium hover:bg-yellow-700 transition-colors duration-300">
+                Sales and Earnings
             </a>
             <a href="#" onclick="showSection('settings', this)" 
                class="sidebar-link bg-gray-700 text-white rounded-lg px-4 py-3 font-medium hover:bg-yellow-700 transition-colors duration-300">
@@ -188,8 +191,8 @@ $username = $_SESSION['username'];
                  class="absolute left-1/2 -translate-x-[98%] -bottom-14 h-48 md:h-56 lg:h-64 opacity-95 drop-shadow-xl z-0 pointer-events-none"/>
         </header>
 
-        <!-- Dashboard Section -->
-        <section id="dashboard" class="">
+        <!--ArtworkGallery Section -->
+        <section id="artworkgallery" class="">
             <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-6 mb-8">
                 <div class="bg-indigo-300 text-indigo-800 shadow-lg rounded-xl p-6 flex items-center gap-4 hover:scale-105 transform transition-all duration-300">
                     <div class="bg-indigo-200 p-3 rounded-full">
@@ -202,43 +205,25 @@ $username = $_SESSION['username'];
                         <p class="text-2xl font-bold mt-1">12</p>
                     </div>
                 </div>
-
-                <div class="bg-green-200 text-green-800 shadow-lg rounded-xl p-6 flex items-center gap-4 hover:scale-105 transform transition-all duration-300">
-                    <div class="bg-green-200 p-3 rounded-full">
-                        <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 21v-2a4 4 0 00-8 0v2M12 7a4 4 0 100-8 4 4 0 000 8z"/>
-                        </svg>
-                    </div>
-                    <div>
-                        <h4 class="text-sm font-medium">Collaborations</h4>
-                        <p class="text-2xl font-bold mt-1">5</p>
-                    </div>
-                </div>
-
-                <div class="bg-yellow-200 text-yellow-800 shadow-lg rounded-xl p-6 flex items-center gap-4 hover:scale-105 transform transition-all duration-300">
-                    <div class="bg-yellow-200 p-3 rounded-full">
-                        <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8c-3.866 0-7 3.134-7 7h14c0-3.866-3.134-7-7-7z"/>
-                        </svg>
-                    </div>
-                    <div>
-                        <h4 class="text-sm font-medium">Sales</h4>
-                        <p class="text-2xl font-bold mt-1">₱2,500</p>
-                    </div>
-                </div>
             </div>
         </section>
 
-        <!-- Projects Section (hidden) -->
-        <section id="projects" class="hidden">
-            <h2 class="text-2xl font-bold mb-4">Projects</h2>
-            <p>Projects section coming soon...</p>
+        <!-- Collaborations Section (hidden) -->
+        <section id="collaborations" class="hidden">
+            <h2 class="text-2xl font-bold mb-4">Collaborations</h2>
+            <p>Collaborations section coming soon...</p>
         </section>
 
-        <!-- Gallery Section (hidden) -->
-        <section id="gallery" class="hidden">
-            <h2 class="text-2xl font-bold mb-4">Gallery</h2>
-            <p>Gallery section coming soon...</p>
+        <!-- marketplace Section (hidden) -->
+        <section id="marketplace" class="hidden">
+            <h2 class="text-2xl font-bold mb-4">Marketplace</h2>
+            <p>Marketplace section coming soon...</p>
+        </section>
+
+        <!-- Sales and Earnings Section (hidden) -->
+        <section id="sales" class="hidden">
+            <h2 class="text-2xl font-bold mb-4">Sales and Earnings</h2>
+            <p>Sales and Earnings section coming soon...</p>
         </section>
 
         <!-- Settings Section (hidden) -->
@@ -250,7 +235,7 @@ $username = $_SESSION['username'];
     <script>
     function showSection(sectionId, link) {
     // Hide all sections
-    ['dashboard','projects','gallery','settings'].forEach(id=>{
+    ['artworkgallery','collaborations','marketplace','sales','settings'].forEach(id=>{
         document.getElementById(id).classList.add('hidden');
     });
 
@@ -271,7 +256,7 @@ $username = $_SESSION['username'];
 
     // Set default visible section
 <?php
-$defaultSection = 'dashboard';
+$defaultSection = 'artworkgallery';
 if (isset($_POST['edit_mode']) && $_POST['edit_mode'] == 1) {
     $defaultSection = 'settings';
 }
@@ -307,6 +292,18 @@ if (isset($_POST['edit_mode']) && $_POST['edit_mode'] == 1) {
             }
         });
     </script>
+    <script>
+        window.onload = function() {
+            // When user logs out, prevent back navigation
+            if (window.history && window.history.pushState) {
+                window.history.pushState(null, null, window.location.href);
+                window.onpopstate = function () {
+                    window.location.href = 'login.php';
+                };
+            }
+        };
+        </script>
+
 
 
 </body>

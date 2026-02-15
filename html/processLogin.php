@@ -25,7 +25,9 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
     $input_password = trim($_POST['password']);
 
     // Prepare and execute the query to check if the username exists
-    $sql = "SELECT id, username, password FROM registered_users WHERE username = :username";
+    $sql = "SELECT id, username, password, role 
+        FROM registered_users 
+        WHERE username = :username";
     $stmt = $conn->prepare($sql);
     $stmt->bindParam(':username', $input_username, PDO::PARAM_STR);
     $stmt->execute();
@@ -40,15 +42,13 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
         ini_set('display_errors', 1);
         error_reporting(E_ALL);
 
-        // Debugging output
-        // echo "Database Password: " . $db_password . "<br>";  // This should be a hashed password
-        // echo "Input Password: " . $input_password . "<br>";  // This should be the plain input password
 
         // Verify the password
         if (password_verify($input_password, $db_password)) {
             // Password is correct, set session variables
             $_SESSION['user_id'] = $id;
             $_SESSION['username'] = $db_username;
+            $_SESSION['role'] = $user['role'];
 
             // Verify the user_id exists before inserting into the login table
             $user_check_sql = "SELECT COUNT(*) FROM registered_users WHERE id = :user_id";
@@ -59,12 +59,56 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
 
             if ($user_exists) {
                 // Insert login record if user_id exists
-                $login_sql = "INSERT INTO login (user_id) VALUES (:user_id)";
-                $login_stmt = $conn->prepare($login_sql);
-                $login_stmt->bindParam(':user_id', $id, PDO::PARAM_STR);
-                if ($login_stmt->execute()) {
-                    header("Location: authenticatedLogin.php");
-                    exit();
+                            /* ===============================
+            COLLECT DEVICE + IP INFO
+            ================================= */
+
+            $ip_address = $_SERVER['REMOTE_ADDR'];
+            $user_agent = $_SERVER['HTTP_USER_AGENT'];
+            $device = strpos($user_agent, 'Mobile') !== false ? 'Mobile' : 'Desktop';
+            $email_used = $db_username; // or use email if available
+
+            /* ===============================
+            INSERT LOGIN LOG
+            ================================= */
+
+            $login_sql = "INSERT INTO login_logs 
+            (user_id, device, ip_address, email_used, login_time)
+            VALUES (:user_id, :device, :ip, :email, NOW())";
+
+            $login_stmt = $conn->prepare($login_sql);
+            $login_stmt->bindParam(':user_id', $id);
+            $login_stmt->bindParam(':device', $device);
+            $login_stmt->bindParam(':ip', $ip_address);
+            $login_stmt->bindParam(':email', $email_used);
+
+            if ($login_stmt->execute()) {
+
+                // Save login log ID for logout tracking
+                $_SESSION['login_log_id'] = $conn->lastInsertId();
+
+                switch ($user['role']) {
+
+                    case 'platform_admin':
+                        header("Location: admin_dashboard.php");
+                        break;
+
+                    case 'artist':
+                        header("Location: authenticatedLogin.php");
+                        break;
+
+                    case 'collector':
+                        header("Location: collector_dashboard.php");
+                        break;
+
+                    default:
+                        header("Location: authenticatedLogin.php");
+                }
+
+                exit();
+
+
+
                 } else {
                     echo "<script>alert('Failed to log the login event.');</script>";
                 }
