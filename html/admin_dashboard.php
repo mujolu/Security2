@@ -190,9 +190,12 @@ $users = $users->fetchAll(PDO::FETCH_ASSOC);
     <div class="flex flex-col items-center text-center mt-8">
         <img src="/Security2/images/profilepic.jpg"
              class="w-24 h-24 rounded-full border-4 border-yellow-500 mb-4">
-        <h4 class="text-white font-semibold">
-            Admin: <?php echo htmlspecialchars($username); ?>
+         <h4 class="text-white font-semibold">
+            <?php echo htmlspecialchars($username); ?>
         </h4>
+        <p class="text-gray-400 text-sm">
+            Platform Admin
+        </p>
     </div>
 
     <!-- ADMIN NAV -->
@@ -218,8 +221,8 @@ $users = $users->fetchAll(PDO::FETCH_ASSOC);
             Collaboration Oversight
         </a>
 
-        <a href="#" onclick="showSection('system', this)"
-           class="sidebar-link bg-gray-700 text-white rounded-lg px-4 py-3">
+        <a href="#" onclick="showSection('usersettings', this)"
+        class="sidebar-link bg-gray-700 text-white rounded-lg px-4 py-3">
             System Settings
         </a>
 
@@ -328,9 +331,10 @@ $users = $users->fetchAll(PDO::FETCH_ASSOC);
             </section>
 
             <!-- SYSTEM SETTINGS -->
-            <section id="system" class="hidden">
+            <section id="usersettings" class="hidden bg-white rounded-xl shadow-lg p-6">
                 <h2 class="text-2xl font-bold mb-4">System Settings</h2>
                 <p>Configure platform rules and security.</p>
+                 <?php include 'user_settings.php'; ?>
             </section>
 
 </main>
@@ -343,7 +347,7 @@ $users = $users->fetchAll(PDO::FETCH_ASSOC);
         
         <script>
         function showSection(sectionId, link) {
-            ['users','reports','marketplace','collaboration','system','userlogs']
+            ['users','reports','marketplace','collaboration','usersettings']
                 .forEach(id => {
                     document.getElementById(id).classList.add('hidden');
                 });

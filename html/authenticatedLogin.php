@@ -1,5 +1,5 @@
 <?php
-// Start the session
+// Start session
 session_start();
 
 // Prevent page caching
@@ -7,15 +7,25 @@ header("Cache-Control: no-store, no-cache, must-revalidate, max-age=0");
 header("Cache-Control: post-check=0, pre-check=0", false);
 header("Pragma: no-cache");
 
-// Check if the user is logged in and is an artist
-if (!isset($_SESSION['username']) || !isset($_SESSION['role']) || strtolower($_SESSION['role']) !== 'artist') {
-    header("Location: login.php");
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['request_collector'])) {
+    $conn = new mysqli("localhost","root","","artlab_db");
+    $user_id = $_SESSION['user_id'];
+
+    $stmt = $conn->prepare("INSERT INTO role_requests (user_id,status) VALUES (?, 'pending')");
+    $stmt->bind_param("i",$user_id);
+    $stmt->execute();
+    $stmt->close();
+    $conn->close();
+
+    header("Location: authenticatedLogin.php"); // refresh page to show status
     exit();
 }
+
 
 // Get the username safely
 $username = $_SESSION['username'];
 ?>
+
 
 <!DOCTYPE html>
 <html lang="en">
@@ -137,7 +147,9 @@ $username = $_SESSION['username'];
  
 
     </style>
+         
 </head>
+
 
 <body class="bg-gray-100 min-h-screen">
     <div class="layout flex w-full min-h-screen">
@@ -167,6 +179,11 @@ $username = $_SESSION['username'];
                 <a href="#" onclick="showSection('sales', this)" 
                class="sidebar-link bg-gray-700 text-white rounded-lg px-4 py-3 font-medium hover:bg-yellow-700 transition-colors duration-300">
                 Sales and Earnings
+            </a>
+                        </a>
+                <a href="#" onclick="showSection('collector', this)" 
+               class="sidebar-link bg-gray-700 text-white rounded-lg px-4 py-3 font-medium hover:bg-yellow-700 transition-colors duration-300">
+                Collector Account Request
             </a>
             <a href="#" onclick="showSection('settings', this)" 
                class="sidebar-link bg-gray-700 text-white rounded-lg px-4 py-3 font-medium hover:bg-yellow-700 transition-colors duration-300">
@@ -225,6 +242,37 @@ $username = $_SESSION['username'];
             <h2 class="text-2xl font-bold mb-4">Sales and Earnings</h2>
             <p>Sales and Earnings section coming soon...</p>
         </section>
+<section id="collectorRequests" class="hidden bg-white p-6 rounded-xl shadow">
+    <h2 class="text-2xl font-bold mb-4">Request Collector Account</h2>
+    <p>Request a Collector account. Admin will verify your details and send login credentials.</p>
+
+    <?php
+    $conn = new mysqli("localhost","root","","artlab_db");
+    if($conn->connect_error) die("DB error: " . $conn->connect_error);
+
+    $user_id = $_SESSION['user_id'];
+    $result = $conn->query("SELECT status FROM role_requests WHERE user_id=$user_id ORDER BY request_id DESC LIMIT 1");
+    $status = $result->fetch_assoc()['status'] ?? null;
+    $showButton = !$status || $status === 'rejected';
+
+    if($status){
+        echo "<p class='mb-4 font-semibold'>Status: <span class='text-yellow-700'>" . ucfirst($status) . "</span></p>";
+        if($status=='approved') echo "<p class='text-green-600 font-medium'>You are now a Collector! Check your email for credentials.</p>";
+        if($status=='pending') echo "<p class='text-blue-600 font-medium'>Your request is pending admin approval.</p>";
+        if($status=='rejected') echo "<p class='text-red-600 font-medium'>Your request was rejected. You can submit again.</p>";
+    }
+
+    if($showButton){
+        echo '<form method="POST">
+                <button name="request_collector" class="bg-yellow-600 text-white px-6 py-2 rounded-lg hover:bg-yellow-700">
+                    Request Collector Account
+                </button>
+              </form>';
+    }
+    $conn->close();
+    ?>
+</section>
+
 
         <!-- Settings Section (hidden) -->
         <section id="settings" class="hidden bg-white rounded-xl shadow-lg w-full max-w-3xl p-6 mx-auto mb-10">
@@ -232,78 +280,51 @@ $username = $_SESSION['username'];
         </section>
 
     </main>
-    <script>
-    function showSection(sectionId, link) {
-    // Hide all sections
-    ['artworkgallery','collaborations','marketplace','sales','settings'].forEach(id=>{
-        document.getElementById(id).classList.add('hidden');
-    });
-
-    // Show selected section
-    document.getElementById(sectionId).classList.remove('hidden');
-
-    // Update sidebar active link
-    document.querySelectorAll('.sidebar-link').forEach(l=>{
-        l.classList.remove('bg-yellow-700');
-        l.classList.add('bg-gray-700');
-    });
-
-    if(link) {
-        link.classList.remove('bg-gray-700');
-        link.classList.add('bg-yellow-700');
-    }
-}
-
-    // Set default visible section
-<?php
-$defaultSection = 'artworkgallery';
-if (isset($_POST['edit_mode']) && $_POST['edit_mode'] == 1) {
-    $defaultSection = 'settings';
-}
-?>
-    showSection('<?= $defaultSection ?>');
-    </script>
-
-
 </div>
-
-
     <!-- Footer Section -->
     <footer>
         <p>&copy; <?php echo date("Y"); ?> Magdasal. All rights reserved.</p>
     </footer>
 
-    <script>
-        document.addEventListener('DOMContentLoaded', function () {
-            // Block the back button if the user is logged in
-            if (<?php echo isset($_SESSION['username']) ? 'true' : 'false'; ?>) {
-                // Push a new state to block the user from navigating back to the previous pages
-                window.history.pushState(null, null, window.location.href);
 
-                // Periodically push state to block back navigation
-                setInterval(function () {
-                    window.history.pushState(null, null, window.location.href);
-                }, 100);
+  <script>
+document.addEventListener("DOMContentLoaded", function () {
 
-                // Prevent navigating back when the user tries to use the back button
-                window.onpopstate = function () {
-                    window.history.pushState(null, null, window.location.href);
-                };
-            }
+    function showSection(sectionId, link) {
+
+        const sections = [
+            'artworkgallery',
+            'collaborations',
+            'marketplace',
+            'sales',
+            'settings',
+            'collectorRequests'
+
+        ];
+
+        sections.forEach(id => {
+            const el = document.getElementById(id);
+            if (el) el.classList.add('hidden');
         });
-    </script>
-    <script>
-        window.onload = function() {
-            // When user logs out, prevent back navigation
-            if (window.history && window.history.pushState) {
-                window.history.pushState(null, null, window.location.href);
-                window.onpopstate = function () {
-                    window.location.href = 'login.php';
-                };
-            }
-        };
-        </script>
 
+        const active = document.getElementById(sectionId);
+        if (active) active.classList.remove('hidden');
+
+        document.querySelectorAll('.sidebar-link').forEach(l => {
+            l.classList.remove('bg-yellow-700');
+            l.classList.add('bg-gray-700');
+        });
+
+        if (link) {
+            link.classList.remove('bg-gray-700');
+            link.classList.add('bg-yellow-700');
+        }
+    }
+
+    showSection('artworkgallery');
+    window.showSection = showSection;
+});
+</script>
 
 
 </body>

@@ -2,9 +2,9 @@
 require 'connection.php';
 
 $user_id = $_SESSION['user_id'] ?? null;
-if (!$user_id) {
-    header("Location: login.php");
-    exit;
+if (!isset($_SESSION['username']) || !isset($_SESSION['user_id'])) {
+    echo "<p class='text-red-500'>Please login to access settings.</p>";
+    return;
 }
 
 $editMode = isset($_POST['edit_mode']) && $_POST['edit_mode'] == 1;
@@ -100,7 +100,7 @@ $showForm = !$hasSecurityQuestions || $editMode;
             <?php endforeach; ?>
         </div>
 
-        <form method="POST" class="mt-6">
+        <form method="POST" class="mt-6" action="">
             <input type="hidden" name="edit_mode" value="1">
             <button type="submit"
                 class="bg-yellow-600 text-white px-6 py-2 rounded-lg hover:bg-yellow-700 transition">
