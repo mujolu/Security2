@@ -82,7 +82,7 @@ $username = $user_row['username'] ?? "Unknown User";
                 <tr class="text-center border-b hover:bg-gray-100">
                     <td class="p-3 border-b border-blue-800"><?= htmlspecialchars($log['device']) ?></td>
                     <td class="p-3 border-b border-blue-800"><?= htmlspecialchars($log['ip_address']) ?></td>
-                    <td class="p-3 border-b border-blue-800"><?= htmlspecialchars($log['email_used']) ?></td>
+                    <td class="p-3 border-b border-blue-800"><?= htmlspecialchars($log['username']) ?></td>
                     <td class="p-3 border-b border-blue-800"><?= $log['login_time'] ?></td>
                     <td class="p-3 border-b border-blue-800">
                         <?= $log['logout_time'] ?? '<span class="text-green-600 font-semibold">Still logged in</span>' ?>

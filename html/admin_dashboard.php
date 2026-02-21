@@ -8,14 +8,106 @@ if (!isset($_SESSION['role']) || $_SESSION['role'] !== 'platform_admin') {
 
 }
 
+// Include the logging function
+function createAdminActivityLogsTable($conn) {
+    try {
+        // Create table with correct schema - IPv4 only (VARCHAR 15)
+        // Use IF NOT EXISTS so we don't drop existing logs
+        $conn->exec("CREATE TABLE IF NOT EXISTS admin_activity_logs (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            user_id VARCHAR(9) NOT NULL,
+            activity VARCHAR(500) NOT NULL,
+            ip_address VARCHAR(15) NULL,
+            timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (user_id) REFERENCES registered_users(id) ON DELETE CASCADE,
+            INDEX idx_user_id (user_id),
+            INDEX idx_timestamp (timestamp)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+    } catch (Exception $e) {
+        // Table might already exist with proper schema
+    }
+}
+
+function logAdminActivity($conn, $actionType, $details = '') {
+    if (!isset($_SESSION['user_id']) || $_SESSION['role'] !== 'platform_admin') return;
+
+    $user_id = $_SESSION['user_id'];
+    // Convert IP to IPv4 only
+    $ip = $_SERVER['REMOTE_ADDR'];
+    if (filter_var($ip, FILTER_VALIDATE_IP, FILTER_FLAG_IPV6)) {
+        // If IPv6, try to extract IPv4 or use localhost equivalent
+        $ip = '127.0.0.1';
+    }
+    $ip = substr($ip, 0, 15); // Truncate to IPv4 length for VARCHAR(15)
+
+    $activity = match($actionType) {
+        'view' => "Viewed page: $details",
+        'delete_user' => "Deleted user ID: $details",
+        'delete_moderator' => "Deleted moderator ID: $details",
+        'add_moderator' => "Added moderator: $details",
+        'approve_artwork' => "Approved artwork ID: $details",
+        'edit_user' => "Edited user ID: $details",
+        'ban_user' => "Banned user ID: $details",
+        'logout' => "Logged out",
+        default => $details
+    };
+
+    try {
+        // Just insert the activity log - table should already exist from createAdminActivityLogsTable()
+        $stmt = $conn->prepare("INSERT INTO admin_activity_logs (user_id, activity, ip_address) VALUES (?, ?, ?)");
+        $stmt->execute([$user_id, $activity, $ip]);
+    } catch (Exception $e) {
+        // If insert fails, try creating table first then insert
+        try {
+            $conn->exec("CREATE TABLE IF NOT EXISTS admin_activity_logs (
+                id INT AUTO_INCREMENT PRIMARY KEY,
+                user_id VARCHAR(9) NOT NULL,
+                activity VARCHAR(500) NOT NULL,
+                ip_address VARCHAR(15) NULL,
+                timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (user_id) REFERENCES registered_users(id) ON DELETE CASCADE,
+                INDEX idx_user_id (user_id),
+                INDEX idx_timestamp (timestamp)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+            
+            // Try insert again
+            $stmt = $conn->prepare("INSERT INTO admin_activity_logs (user_id, activity, ip_address) VALUES (?, ?, ?)");
+            $stmt->execute([$user_id, $activity, $ip]);
+        } catch (Exception $e2) {
+            // Silent fail - don't break the main operation
+        }
+    }
+}
+
+// Create table if it doesn't exist
+createAdminActivityLogsTable($conn);
+
 if (isset($_GET['delete'])) {
     $id = $_GET['delete'];
     if ($id == $_SESSION['user_id']) { // prevent self-delete
         header("Location: admin_dashboard.php");
         exit();
     }
+    
+    // Get user info before deleting for logging
+    try {
+        $info_stmt = $conn->prepare("SELECT first_name, last_name, username, email FROM registered_users WHERE id = ?");
+        $info_stmt->execute([$id]);
+        $user_info = $info_stmt->fetch(PDO::FETCH_ASSOC);
+        
+        if ($user_info) {
+            $user_details = $user_info['first_name'] . ' ' . $user_info['last_name'] . ' (ID:' . $id . ', Username: ' . $user_info['username'] . ')';
+        }
+    } catch (Exception $e) {
+        $user_details = "ID: $id";
+    }
+    
     $stmt = $conn->prepare("DELETE FROM registered_users WHERE id = ?");
     $stmt->execute([$id]);
+    
+    // Log the deletion
+    logAdminActivity($conn, 'delete_user', $user_details ?? "ID: $id");
+    
     header("Location: admin_dashboard.php");
     exit();
 }
@@ -26,8 +118,26 @@ if (isset($_GET['ban'])) {
         header("Location: admin_dashboard.php");
         exit();
     }
+    
+    // Get user info before banning for logging
+    try {
+        $info_stmt = $conn->prepare("SELECT first_name, last_name, username, email FROM registered_users WHERE id = ?");
+        $info_stmt->execute([$id]);
+        $user_info = $info_stmt->fetch(PDO::FETCH_ASSOC);
+        
+        if ($user_info) {
+            $user_details = $user_info['first_name'] . ' ' . $user_info['last_name'] . ' (ID:' . $id . ', Username: ' . $user_info['username'] . ')';
+        }
+    } catch (Exception $e) {
+        $user_details = "ID: $id";
+    }
+    
     $stmt = $conn->prepare("UPDATE registered_users SET status='banned' WHERE id=?");
     $stmt->execute([$id]);
+    
+    // Log the ban
+    logAdminActivity($conn, 'ban_user', $user_details ?? "ID: $id");
+    
     header("Location: admin_dashboard.php");
     exit();
 }
@@ -38,6 +148,10 @@ header("Pragma: no-cache");
 
 $username = $_SESSION['username'] ?? 'platform admin';
 $current_page = basename($_SERVER['PHP_SELF']);
+
+// Log page view
+logAdminActivity($conn, 'view', 'User Management Dashboard');
+
 $sql = "SELECT u.username, l.*
         FROM login_logs l
         JOIN registered_users u ON l.user_id = u.id
