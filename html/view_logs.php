@@ -70,6 +70,7 @@ $username = $user_row['username'] ?? "Unknown User";
             <thead class="bg-gray-800 text-white">
                 <tr>
                     <th class="p-3 border-b border-blue-800">Device</th>
+                    <th class="p-3 border-b border-blue-800">OS</th>
                     <th class="p-3 border-b border-blue-800">IP Address</th>
                     <th class="p-3 border-b border-blue-800">Username</th>
                     <th class="p-3 border-b border-blue-800">Login Time</th>
@@ -81,6 +82,7 @@ $username = $user_row['username'] ?? "Unknown User";
             <?php foreach ($logs as $log): ?>
                 <tr class="text-center border-b hover:bg-gray-100">
                     <td class="p-3 border-b border-blue-800"><?= htmlspecialchars($log['device']) ?></td>
+                    <td class="p-3 border-b border-blue-800"><?= htmlspecialchars($log['os'] ?? 'Unknown') ?></td>
                     <td class="p-3 border-b border-blue-800"><?= htmlspecialchars($log['ip_address']) ?></td>
                     <td class="p-3 border-b border-blue-800"><?= htmlspecialchars($log['username']) ?></td>
                     <td class="p-3 border-b border-blue-800"><?= $log['login_time'] ?></td>

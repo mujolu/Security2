@@ -18,6 +18,10 @@ function createAdminActivityLogsTable($conn) {
             user_id VARCHAR(9) NOT NULL,
             activity VARCHAR(500) NOT NULL,
             ip_address VARCHAR(15) NULL,
+            device VARCHAR(50) NULL,
+            os VARCHAR(50) NULL,
+            time_in TIMESTAMP NULL,
+            time_out TIMESTAMP NULL,
             timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             FOREIGN KEY (user_id) REFERENCES registered_users(id) ON DELETE CASCADE,
             INDEX idx_user_id (user_id),
@@ -28,7 +32,7 @@ function createAdminActivityLogsTable($conn) {
     }
 }
 
-function logAdminActivity($conn, $actionType, $details = '') {
+function logAdminActivity($conn, $actionType, $details = '', $time_in = null, $time_out = null) {
     if (!isset($_SESSION['user_id']) || $_SESSION['role'] !== 'platform_admin') return;
 
     $user_id = $_SESSION['user_id'];
@@ -39,6 +43,43 @@ function logAdminActivity($conn, $actionType, $details = '') {
         $ip = '127.0.0.1';
     }
     $ip = substr($ip, 0, 15); // Truncate to IPv4 length for VARCHAR(15)
+
+    // Detect device from User Agent
+    $user_agent = $_SERVER['HTTP_USER_AGENT'] ?? '';
+    if (preg_match('/Mobile|Android|iPhone|iPad|iPod/i', $user_agent)) {
+        $device = preg_match('/Tablet|iPad/i', $user_agent) ? 'Tablet' : 'Mobile';
+    } else {
+        $device = 'Desktop';
+    }
+
+    $user_agent_lower = strtolower($user_agent);
+    if (strpos($user_agent_lower, 'android') !== false) {
+        $os = 'Android';
+    } elseif (strpos($user_agent_lower, 'iphone') !== false || strpos($user_agent_lower, 'ipad') !== false || strpos($user_agent_lower, 'ios') !== false) {
+        $os = 'iOS';
+    } elseif (strpos($user_agent_lower, 'windows') !== false) {
+        $os = 'Windows';
+    } elseif (strpos($user_agent_lower, 'macintosh') !== false || strpos($user_agent_lower, 'mac os x') !== false) {
+        $os = 'macOS';
+    } elseif (strpos($user_agent_lower, 'linux') !== false) {
+        $os = 'Linux';
+    } else {
+        $os = 'Unknown';
+    }
+
+    // Get login_time from current login session if not provided
+    if ($time_in === null && isset($_SESSION['login_log_id'])) {
+        try {
+            $login_stmt = $conn->prepare("SELECT login_time FROM login_logs WHERE login_id = ?");
+            $login_stmt->execute([$_SESSION['login_log_id']]);
+            $login_result = $login_stmt->fetch(PDO::FETCH_ASSOC);
+            if ($login_result) {
+                $time_in = $login_result['login_time'];
+            }
+        } catch (Exception $e) {
+            // Silent fail - just continue without login time
+        }
+    }
 
     $activity = match($actionType) {
         'view' => "Viewed page: $details",
@@ -54,8 +95,8 @@ function logAdminActivity($conn, $actionType, $details = '') {
 
     try {
         // Just insert the activity log - table should already exist from createAdminActivityLogsTable()
-        $stmt = $conn->prepare("INSERT INTO admin_activity_logs (user_id, activity, ip_address) VALUES (?, ?, ?)");
-        $stmt->execute([$user_id, $activity, $ip]);
+        $stmt = $conn->prepare("INSERT INTO admin_activity_logs (user_id, activity, ip_address, device, os, time_in, time_out) VALUES (?, ?, ?, ?, ?, ?, ?)");
+        $stmt->execute([$user_id, $activity, $ip, $device, $os, $time_in, $time_out]);
     } catch (Exception $e) {
         // If insert fails, try creating table first then insert
         try {
@@ -64,6 +105,10 @@ function logAdminActivity($conn, $actionType, $details = '') {
                 user_id VARCHAR(9) NOT NULL,
                 activity VARCHAR(500) NOT NULL,
                 ip_address VARCHAR(15) NULL,
+                device VARCHAR(50) NULL,
+                os VARCHAR(50) NULL,
+                time_in TIMESTAMP NULL,
+                time_out TIMESTAMP NULL,
                 timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 FOREIGN KEY (user_id) REFERENCES registered_users(id) ON DELETE CASCADE,
                 INDEX idx_user_id (user_id),
@@ -71,8 +116,8 @@ function logAdminActivity($conn, $actionType, $details = '') {
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
             
             // Try insert again
-            $stmt = $conn->prepare("INSERT INTO admin_activity_logs (user_id, activity, ip_address) VALUES (?, ?, ?)");
-            $stmt->execute([$user_id, $activity, $ip]);
+            $stmt = $conn->prepare("INSERT INTO admin_activity_logs (user_id, activity, ip_address, device, os, time_in, time_out) VALUES (?, ?, ?, ?, ?, ?, ?)");
+            $stmt->execute([$user_id, $activity, $ip, $device, $os, $time_in, $time_out]);
         } catch (Exception $e2) {
             // Silent fail - don't break the main operation
         }
@@ -317,6 +362,7 @@ $users = $users->fetchAll(PDO::FETCH_ASSOC);
     <nav class="flex flex-col gap-4 mt-8">
 
         <a href="admin_dashboard.php" class="sidebar-link <?php echo $current_page === 'admin_dashboard.php' ? 'bg-yellow-700' : 'bg-gray-700'; ?> text-white rounded-lg px-4 py-3">User Management</a>
+        <a href="admin_flag_review.php" class="sidebar-link <?php echo $current_page === 'admin_flag_review.php' ? 'bg-yellow-700' : 'bg-gray-700'; ?> text-white rounded-lg px-4 py-3">Flag Audit</a>
         <a href="admin_deploy.php" class="sidebar-link <?php echo $current_page === 'admin_deploy.php' ? 'bg-yellow-700' : 'bg-gray-700'; ?> text-white rounded-lg px-4 py-3">Deploy Moderators</a>
         <a href="admin_marketplace.php" class="sidebar-link <?php echo $current_page === 'admin_marketplace.php' ? 'bg-yellow-700' : 'bg-gray-700'; ?> text-white rounded-lg px-4 py-3">Marketplace Art </a>
         <a href="admin_collab.php" class="sidebar-link <?php echo $current_page === 'admin_collab.php' ? 'bg-yellow-700' : 'bg-gray-700'; ?> text-white rounded-lg px-4 py-3">Collaboration Oversight</a>

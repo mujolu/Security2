@@ -3,12 +3,12 @@ header('Content-Type: application/json');
 
 // Database connection
 $servername = "localhost";
-$username = "root"; // Replace with your database username
-$password = ""; // Replace with your database password
+$db_username = "root"; // Replace with your database username
+$db_password = ""; // Replace with your database password
 $dbname = "artlab_db"; // Replace with your database name
 
 try {
-    $conn = new PDO("mysql:host=$servername;dbname=$dbname", $username, $password);
+    $conn = new PDO("mysql:host=$servername;dbname=$dbname", $db_username, $db_password);
     $conn->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
 } catch (PDOException $e) {
     error_log("Database connection failed: " . $e->getMessage());
@@ -44,10 +44,19 @@ try {
 
                     // If password is also provided, validate it
                     if (isset($_POST['password']) && !empty($_POST['password'])) {
-                        $password = $_POST['password'];
-
-                        // Verify the password using password_verify()
-                        if (password_verify($password, $user['password'])) {
+                        $user_password = $_POST['password'];
+                        $stored_password = trim($user['password']); // Remove any whitespace
+                        
+                        // Try password_verify first (for hashed passwords)
+                        $password_correct = password_verify($user_password, $stored_password);
+                        
+                        // Fallback: if password_verify fails, check if password is stored as plaintext
+                        if (!$password_correct && !preg_match('/^\$2[aby]\$/', $stored_password)) {
+                            // Password doesn't look like a bcrypt hash, try plaintext comparison
+                            $password_correct = ($user_password === $stored_password);
+                        }
+                        
+                        if ($password_correct) {
                             $response['validCredentials'] = true;
                             $response['userId'] = $user['id']; // Return user ID if needed
                         } else {
@@ -56,30 +65,10 @@ try {
                         }
                     }
                 } else {
-                    // Not found in registered_users; check moderators table as fallback
-                    $mod_stmt = $conn->prepare("SELECT id, password FROM moderators WHERE username = :username LIMIT 1");
-                    $mod_stmt->bindParam(':username', $username, PDO::PARAM_STR);
-                    $mod_stmt->execute();
-                    $mod = $mod_stmt->fetch(PDO::FETCH_ASSOC);
-
-                    if ($mod) {
-                        $response['usernameExists'] = true;
-                        $response['usernameValid'] = true;
-                        if (isset($_POST['password']) && !empty($_POST['password'])) {
-                            $password = $_POST['password'];
-                            if (password_verify($password, $mod['password'])) {
-                                $response['validCredentials'] = true;
-                                $response['userId'] = $mod['id'];
-                            } else {
-                                $response['validCredentials'] = false;
-                                $response['error'] = 'Invalid password.';
-                            }
-                        }
-                    } else {
-                        $response['usernameExists'] = false;
-                        $response['usernameValid'] = false;
-                        $response['error'] = 'Username does not exist.';
-                    }
+                    // Username does not exist
+                    $response['usernameExists'] = false;
+                    $response['usernameValid'] = false;
+                    $response['error'] = 'Username does not exist.';
                 }
             }
         } else {

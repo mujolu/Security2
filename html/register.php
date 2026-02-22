@@ -11,10 +11,30 @@ try {
   // Set the PDO error mode to exception
   $conn->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
 
+  // Function to generate unique ID in format ####-####
+  function generateUniqueID($conn) {
+    while (true) {
+      $part1 = str_pad(rand(0, 9999), 4, '0', STR_PAD_LEFT);
+      $part2 = str_pad(rand(0, 9999), 4, '0', STR_PAD_LEFT);
+      $id = $part1 . '-' . $part2;
+      
+      // Check if ID already exists
+      $stmt = $conn->prepare("SELECT id FROM registered_users WHERE id = :id");
+      $stmt->bindParam(':id', $id);
+      $stmt->execute();
+      
+      if ($stmt->rowCount() === 0) {
+        return $id;
+      }
+    }
+  }
+
   // Check if the form is submitted
   if ($_SERVER["REQUEST_METHOD"] == "POST") {
+    // Generate automatic ID if not provided
+    $id = generateUniqueID($conn);
+    
     // Retrieve form data
-    $id = trim($_POST['id']);
     $first_name = trim($_POST['first_name']);
     $middle_initial = trim($_POST['middle_initial']);
     $last_name = trim($_POST['last_name']);
@@ -70,8 +90,8 @@ try {
     $age = $currentDate->diff($birthDate)->y;
 
     // Prepare the SQL statement to insert the data into the database
-    $stmt = $conn->prepare("INSERT INTO registered_users (id, first_name, middle_initial, last_name, extension_name, username, email, password, sex, purok, barangay, city, province, country, zip_code, birthdate, age) 
-                            VALUES (:id, :first_name, :middle_initial, :last_name, :extension_name, :username, :email, :password, :sex, :purok, :barangay, :city, :province, :country, :zip_code, :birthdate, :age)");
+    $stmt = $conn->prepare("INSERT INTO registered_users (id, first_name, middle_initial, last_name, extension_name, username, email, password, sex, purok, barangay, city, province, country, zip_code, birthdate, age, role) 
+                            VALUES (:id, :first_name, :middle_initial, :last_name, :extension_name, :username, :email, :password, :sex, :purok, :barangay, :city, :province, :country, :zip_code, :birthdate, :age, :role)");
 
     // Bind parameters to prevent SQL injection
     $stmt->bindParam(':id', $id);
@@ -91,6 +111,8 @@ try {
     $stmt->bindParam(':zip_code', $zip_code);
     $stmt->bindParam(':birthdate', $birthdate);
     $stmt->bindParam(':age', $age);
+    $role = 'artist';
+    $stmt->bindParam(':role', $role);
 
     // Execute the SQL query
     if ($stmt->execute()) {
@@ -101,17 +123,17 @@ try {
       echo '  <meta charset="utf-8">';
       echo '  <meta name="viewport" content="width=device-width, initial-scale=1">';
       echo '  <title>Registration Successful</title>';
-      echo '  <meta http-equiv="refresh" content="3;url=login.php">';
       echo '  <style>body{font-family:Arial,Helvetica,sans-serif;background:#f3f4f6;margin:0;height:100vh;display:flex;align-items:center;justify-content:center}';
       echo '  .card{background:#fff;padding:24px;border-radius:8px;box-shadow:0 6px 18px rgba(0,0,0,0.08);max-width:420px;text-align:center}a{color:#2563eb;text-decoration:none}</style>';
       echo '</head>';
       echo '<body>';
       echo '  <div class="card">';
       echo '    <h2 style="margin:0 0 8px">Registration Successful</h2>';
-      echo '    <p style="margin:0 0 12px">Your account has been created. Redirecting to login page...</p>';
-      echo '    <p style="margin:0"><a href="login.php">Click here if you are not redirected</a></p>';
+      echo '    <p style="margin:0 0 12px">Your account has been created successfully!</p>';
+      echo '    <p style="margin:0 0 12px; font-weight:bold; color:#059669">Your ID Number: ' . htmlspecialchars($id) . '</p>';
+      echo '    <p style="margin:0 0 16px; font-size:14px">Please save your ID for future reference.</p>';
+      echo '    <button onclick="window.location.href=\'login.php\';" style="background:#2563eb;color:white;border:none;padding:10px 24px;border-radius:6px;font-size:16px;cursor:pointer;font-weight:500">OK</button>';
       echo '  </div>';
-      echo '  <script>setTimeout(function(){window.location.href="login.php";}, 3000);</script>';
       echo '</body>';
       echo '</html>';
       exit;
@@ -177,15 +199,10 @@ $conn = null;
           <div class="border border-slate-300 rounded-lg p-4">
             <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
               <div>
-                <label for="id" class="block mb-1 text-sm font-medium text-gray-700">ID No.<span class="text-xs mt-1" style="color: red;" >*</span> </label></label>
-                
-                <input id="id" name="id" type="text" required maxlength="9"
-                  class="border border-gray-300 p-2 rounded focus:outline-none focus:border-blue-500 w-full"
-                  placeholder="xxxx-xxxx"
-                  value="<?php echo isset($_POST['id']) ? $_POST['id'] : ''; ?>"
-                  
-                  >
-                  
+                <label for="id" class="block mb-1 text-sm font-medium text-gray-700">ID No.</label>
+                <!-- ID is auto-generated and displayed as readonly -->
+                <input id="id" name="id" type="text" readonly placeholder="Will be auto-generated"
+                  class="border border-gray-300 p-2 rounded focus:outline-none w-full bg-gray-100 text-gray-600 cursor-not-allowed">
               </div>
               <div>
                 <label for="first_name" class="block mb-1 text-sm font-medium text-gray-700">First Name <span class="text-xs mt-1" style="color: red;" >*</span></label>

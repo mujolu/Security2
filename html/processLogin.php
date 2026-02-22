@@ -1,8 +1,8 @@
 <?php
 // Database connection details
 $servername = "localhost";
-$username = "root"; // Replace with your database username
-$password = ""; // Replace with your database password
+$db_username = "root"; // Replace with your database username
+$db_password = ""; // Replace with your database password
 $dbname = "artlab_db"; // Replace with your database name
 
 // Start the session at the top of the script
@@ -10,12 +10,37 @@ session_start();
 
 try {
     // Create a new PDO connection
-    $conn = new PDO("mysql:host=$servername;dbname=$dbname", $username, $password);
+    $conn = new PDO("mysql:host=$servername;dbname=$dbname", $db_username, $db_password);
     // Set the PDO error mode to exception
     $conn->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
 } catch (PDOException $e) {
     // If connection fails, show error message
     die("Connection failed: " . $e->getMessage());
+}
+
+// Create login_logs table if it doesn't exist
+try {
+    $conn->exec("CREATE TABLE IF NOT EXISTS login_logs (
+        login_id INT AUTO_INCREMENT PRIMARY KEY,
+        user_id VARCHAR(9) NOT NULL,
+        device VARCHAR(50) NULL,
+        os VARCHAR(50) NULL,
+        ip_address VARCHAR(15) NULL,
+        username VARCHAR(255) NOT NULL,
+        login_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        logout_time TIMESTAMP NULL,
+        INDEX idx_user_id (user_id),
+        INDEX idx_login_time (login_time)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+} catch (Exception $e) {
+    // Table might already exist
+}
+
+function normalizeIPv4($ip_address) {
+    if (!empty($ip_address) && filter_var($ip_address, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4)) {
+        return substr($ip_address, 0, 15);
+    }
+    return '127.0.0.1';
 }
 
 // Check if form is submitted
@@ -39,12 +64,32 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
         $db_username = $user['username'];
         $db_password = $user['password'];
 
-        ini_set('display_errors', 1);
-        error_reporting(E_ALL);
-
-
         // Verify the password
-        if (password_verify($input_password, $db_password)) {
+        $stored_password = trim($db_password); // Remove any whitespace
+        
+        // Try password_verify first (for hashed passwords)
+        $password_correct = password_verify($input_password, $stored_password);
+        
+        // Fallback: if password_verify fails, check if password is stored as plaintext
+        if (!$password_correct && !preg_match('/^\$2[aby]\$/', $stored_password)) {
+            // Password doesn't look like a bcrypt hash, try plaintext comparison
+            $password_correct = ($input_password === $stored_password);
+            
+            // If plaintext match works, hash and update the password for security
+            if ($password_correct) {
+                try {
+                    $new_hash = password_hash($input_password, PASSWORD_DEFAULT);
+                    $update_stmt = $conn->prepare("UPDATE registered_users SET password = :password WHERE id = :id");
+                    $update_stmt->bindParam(':password', $new_hash);
+                    $update_stmt->bindParam(':id', $id);
+                    $update_stmt->execute();
+                } catch (Exception $e) {
+                    // Silently fail password update, login proceeds
+                }
+            }
+        }
+        
+        if ($password_correct) {
             // Password is correct, set session variables
             $_SESSION['user_id'] = $id;
             $_SESSION['username'] = $db_username;
@@ -63,24 +108,40 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
             COLLECT DEVICE + IP INFO
             ================================= */
 
-            $ip_address = $_SERVER['REMOTE_ADDR'];
+            $ip_address = normalizeIPv4($_SERVER['REMOTE_ADDR'] ?? '');
             $user_agent = $_SERVER['HTTP_USER_AGENT'];
             $device = strpos($user_agent, 'Mobile') !== false ? 'Mobile' : 'Desktop';
-            $email_used = $db_username; // or use email if available
+            $user_agent_lower = strtolower($user_agent);
+            if (strpos($user_agent_lower, 'android') !== false) {
+                $os = 'Android';
+            } elseif (strpos($user_agent_lower, 'iphone') !== false || strpos($user_agent_lower, 'ipad') !== false || strpos($user_agent_lower, 'ios') !== false) {
+                $os = 'iOS';
+            } elseif (strpos($user_agent_lower, 'windows') !== false) {
+                $os = 'Windows';
+            } elseif (strpos($user_agent_lower, 'macintosh') !== false || strpos($user_agent_lower, 'mac os x') !== false) {
+                $os = 'macOS';
+            } elseif (strpos($user_agent_lower, 'linux') !== false) {
+                $os = 'Linux';
+            } else {
+                $os = 'Unknown';
+            }
+            // Use username column for login log; some schemas store username instead of email_used
+            $username_used = $db_username;
 
             /* ===============================
             INSERT LOGIN LOG
             ================================= */
 
             $login_sql = "INSERT INTO login_logs 
-            (user_id, device, ip_address, email_used, login_time)
-            VALUES (:user_id, :device, :ip, :email, NOW())";
+            (user_id, device, os, ip_address, username, login_time)
+            VALUES (:user_id, :device, :os, :ip, :username, NOW())";
 
             $login_stmt = $conn->prepare($login_sql);
             $login_stmt->bindParam(':user_id', $id);
             $login_stmt->bindParam(':device', $device);
+            $login_stmt->bindParam(':os', $os);
             $login_stmt->bindParam(':ip', $ip_address);
-            $login_stmt->bindParam(':email', $email_used);
+            $login_stmt->bindParam(':username', $username_used);
 
             if ($login_stmt->execute()) {
 
@@ -124,31 +185,8 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
             echo "<script>alert('Incorrect username or password.');</script>";
         }
     } else {
-        // Username not found in registered_users - check moderators table as a fallback
-        try {
-            $mod_stmt = $conn->prepare("SELECT id, username, password FROM moderators WHERE username = :username LIMIT 1");
-            $mod_stmt->bindParam(':username', $input_username, PDO::PARAM_STR);
-            $mod_stmt->execute();
-            if ($mod_stmt->rowCount() > 0) {
-                $mod = $mod_stmt->fetch(PDO::FETCH_ASSOC);
-                if (password_verify($input_password, $mod['password'])) {
-                    // Successful moderator login
-                    $_SESSION['user_id'] = $mod['id'];
-                    $_SESSION['username'] = $mod['username'];
-                    $_SESSION['role'] = 'moderator';
-                    // Redirect to moderator dashboard
-                    header("Location: moderator_dashboard.php");
-                    exit();
-                } else {
-                    echo "<script>alert('Incorrect username or password.');</script>";
-                }
-            } else {
-                // Username does not exist anywhere
-                echo "<script>alert('Incorrect username or password.');</script>";
-            }
-        } catch (Exception $e) {
-            echo "<script>alert('Incorrect username or password.');</script>";
-        }
+        // Username not found in registered_users
+        echo "<script>alert('Incorrect username or password.');</script>";
     }
 }
 

@@ -21,6 +21,10 @@ function createAdminActivityLogsTable($conn) {
             user_id VARCHAR(9) NOT NULL,
             activity VARCHAR(500) NOT NULL,
             ip_address VARCHAR(15) NULL,
+            device VARCHAR(50) NULL,
+            os VARCHAR(50) NULL,
+            time_in TIMESTAMP NULL,
+            time_out TIMESTAMP NULL,
             timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             FOREIGN KEY (user_id) REFERENCES registered_users(id) ON DELETE CASCADE,
             INDEX idx_user_id (user_id),
@@ -31,7 +35,7 @@ function createAdminActivityLogsTable($conn) {
     }
 }
 
-function logAdminActivity($conn, $actionType, $details = '') {
+function logAdminActivity($conn, $actionType, $details = '', $time_in = null, $time_out = null) {
     if (!isset($_SESSION['user_id']) || $_SESSION['role'] !== 'platform_admin') return;
 
     $user_id = $_SESSION['user_id'];
@@ -42,6 +46,43 @@ function logAdminActivity($conn, $actionType, $details = '') {
         $ip = '127.0.0.1';
     }
     $ip = substr($ip, 0, 15); // Truncate to IPv4 length for VARCHAR(15)
+
+    // Detect device from User Agent
+    $user_agent = $_SERVER['HTTP_USER_AGENT'] ?? '';
+    if (preg_match('/Mobile|Android|iPhone|iPad|iPod/i', $user_agent)) {
+        $device = preg_match('/Tablet|iPad/i', $user_agent) ? 'Tablet' : 'Mobile';
+    } else {
+        $device = 'Desktop';
+    }
+
+    $user_agent_lower = strtolower($user_agent);
+    if (strpos($user_agent_lower, 'android') !== false) {
+        $os = 'Android';
+    } elseif (strpos($user_agent_lower, 'iphone') !== false || strpos($user_agent_lower, 'ipad') !== false || strpos($user_agent_lower, 'ios') !== false) {
+        $os = 'iOS';
+    } elseif (strpos($user_agent_lower, 'windows') !== false) {
+        $os = 'Windows';
+    } elseif (strpos($user_agent_lower, 'macintosh') !== false || strpos($user_agent_lower, 'mac os x') !== false) {
+        $os = 'macOS';
+    } elseif (strpos($user_agent_lower, 'linux') !== false) {
+        $os = 'Linux';
+    } else {
+        $os = 'Unknown';
+    }
+
+    // Get login_time from current login session if not provided
+    if ($time_in === null && isset($_SESSION['login_log_id'])) {
+        try {
+            $login_stmt = $conn->prepare("SELECT login_time FROM login_logs WHERE login_id = ?");
+            $login_stmt->execute([$_SESSION['login_log_id']]);
+            $login_result = $login_stmt->fetch(PDO::FETCH_ASSOC);
+            if ($login_result) {
+                $time_in = $login_result['login_time'];
+            }
+        } catch (Exception $e) {
+            // Silent fail - just continue without login time
+        }
+    }
 
     // Build dynamic activity message
     $activity = match($actionType) {
@@ -58,8 +99,8 @@ function logAdminActivity($conn, $actionType, $details = '') {
 
     try {
         // Just insert the activity log - table should already exist from createAdminActivityLogsTable()
-        $stmt = $conn->prepare("INSERT INTO admin_activity_logs (user_id, activity, ip_address) VALUES (?, ?, ?)");
-        $stmt->execute([$user_id, $activity, $ip]);
+        $stmt = $conn->prepare("INSERT INTO admin_activity_logs (user_id, activity, ip_address, device, os, time_in, time_out) VALUES (?, ?, ?, ?, ?, ?, ?)");
+        $stmt->execute([$user_id, $activity, $ip, $device, $os, $time_in, $time_out]);
     } catch (Exception $e) {
         // If insert fails, try creating table first then insert
         try {
@@ -68,6 +109,10 @@ function logAdminActivity($conn, $actionType, $details = '') {
                 user_id VARCHAR(9) NOT NULL,
                 activity VARCHAR(500) NOT NULL,
                 ip_address VARCHAR(15) NULL,
+                device VARCHAR(50) NULL,
+                os VARCHAR(50) NULL,
+                time_in TIMESTAMP NULL,
+                time_out TIMESTAMP NULL,
                 timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 FOREIGN KEY (user_id) REFERENCES registered_users(id) ON DELETE CASCADE,
                 INDEX idx_user_id (user_id),
@@ -75,8 +120,8 @@ function logAdminActivity($conn, $actionType, $details = '') {
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
             
             // Try insert again
-            $stmt = $conn->prepare("INSERT INTO admin_activity_logs (user_id, activity, ip_address) VALUES (?, ?, ?)");
-            $stmt->execute([$user_id, $activity, $ip]);
+            $stmt = $conn->prepare("INSERT INTO admin_activity_logs (user_id, activity, ip_address, device, os, time_in, time_out) VALUES (?, ?, ?, ?, ?, ?, ?)");
+            $stmt->execute([$user_id, $activity, $ip, $device, $os, $time_in, $time_out]);
         } catch (Exception $e2) {
             // Silent fail - don't break the main operation
         }
@@ -86,87 +131,24 @@ function logAdminActivity($conn, $actionType, $details = '') {
 // Create table if it doesn't exist
 createAdminActivityLogsTable($conn);
 
-// Diagnostic check for the table
-$table_exists = false;
-$table_row_count = 0;
+// Fetch admin's activity logs (view, delete, alter actions)
+$activity_logs = [];
 $error_msg = '';
 
 try {
-    // Verify table exists and has the right schema
-    $check_stmt = $conn->prepare("SELECT COUNT(*) as cnt FROM admin_activity_logs");
-    $check_stmt->execute();
-    $result = $check_stmt->fetch(PDO::FETCH_ASSOC);
-    $table_exists = true;
-    $table_row_count = $result['cnt'] ?? 0;
-} catch (Exception $e) {
-    // Table doesn't exist or has wrong schema
-    $table_exists = false;
-    $error_msg = "Database table not ready. Attempting to recreate...";
-    
-    // Try to recreate the table
-    try {
-        $conn->exec("DROP TABLE IF EXISTS admin_activity_logs");
-        $conn->exec("CREATE TABLE admin_activity_logs (
-            id INT AUTO_INCREMENT PRIMARY KEY,
-            user_id VARCHAR(9) NOT NULL,
-            activity VARCHAR(500) NOT NULL,
-            ip_address VARCHAR(15) NULL,
-            timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            FOREIGN KEY (user_id) REFERENCES registered_users(id) ON DELETE CASCADE,
-            INDEX idx_user_id (user_id),
-            INDEX idx_timestamp (timestamp)
-        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
-        
-        $table_exists = true;
-        $table_row_count = 0;
-        $error_msg = ""; // Clear error after successful recreation
-    } catch (Exception $e2) {
-        $table_exists = false;
-        $error_msg = "Error: Unable to create logging table. " . $e2->getMessage();
-    }
-}
-
-// Log the page view
-logAdminActivity($conn, 'view', 'Activity Logs Page');
-
-// Fetch activity logs
-$activity_logs = [];
-try {
-    // Query with error handling for schema issues
-    if ($table_exists) {
-        $stmt = $conn->prepare("SELECT al.id, ru.username, al.activity, al.ip_address, al.timestamp 
-                                FROM admin_activity_logs al
-                                JOIN registered_users ru ON al.user_id = ru.id
-                                ORDER BY al.timestamp DESC
-                                LIMIT 100");
-        $stmt->execute();
-        $activity_logs = $stmt->fetchAll(PDO::FETCH_ASSOC);
-    }
-} catch (Exception $e) {
-    $error_msg = 'Error fetching logs: ' . $e->getMessage() . ' (Schema issue detected. Trying to recreate table...)';
-    
-    // Try to fix the schema
-    try {
-        $conn->exec("DROP TABLE IF EXISTS admin_activity_logs");
-        $conn->exec("CREATE TABLE admin_activity_logs (
-            id INT AUTO_INCREMENT PRIMARY KEY,
-            user_id VARCHAR(9) NOT NULL,
-            activity VARCHAR(500) NOT NULL,
-            ip_address VARCHAR(15) NULL,
-            timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            FOREIGN KEY (user_id) REFERENCES registered_users(id) ON DELETE CASCADE,
-            INDEX idx_user_id (user_id),
-            INDEX idx_timestamp (timestamp)
-        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
-        
-        $error_msg = "Table schema was fixed. New logs will be recorded from now.";
-        $table_exists = true;
-        $table_row_count = 0;
-    } catch (Exception $e2) {
-        $error_msg = 'Schema error: ' . $e->getMessage();
-    }
-    
+    $stmt = $conn->prepare("
+        SELECT activity, device, os, ip_address, time_in, time_out, timestamp 
+        FROM admin_activity_logs 
+        WHERE user_id = :user_id 
+        ORDER BY timestamp DESC 
+        LIMIT 100
+    ");
+    $stmt->bindParam(':user_id', $_SESSION['user_id'], PDO::PARAM_STR);
+    $stmt->execute();
+    $activity_logs = $stmt->fetchAll(PDO::FETCH_ASSOC);
+} catch (PDOException $e) {
     $activity_logs = [];
+    $error_msg = 'Error fetching activity logs: ' . $e->getMessage();
 }
 ?>
 
@@ -206,6 +188,7 @@ try {
 
     <nav class="flex flex-col gap-4 mt-8">
         <a href="admin_dashboard.php" class="sidebar-link bg-gray-700 text-white rounded-lg px-4 py-3">User Management</a>
+        <a href="admin_flag_review.php" class="sidebar-link bg-gray-700 text-white rounded-lg px-4 py-3">Flag Audit</a>
         <a href="admin_deploy.php" class="sidebar-link bg-gray-700 text-white rounded-lg px-4 py-3">Deploy Moderators</a>
         <a href="admin_marketplace.php" class="sidebar-link bg-gray-700 text-white rounded-lg px-4 py-3">Marketplace Art </a>
         <a href="admin_collab.php" class="sidebar-link bg-gray-700 text-white rounded-lg px-4 py-3">Collaboration Oversight</a>
@@ -228,9 +211,8 @@ try {
         <!-- Status Indicator -->
         <div class="mb-4 p-3 rounded bg-blue-50 border-l-4 border-blue-400">
             <p class="text-sm text-blue-800">
-                <strong>Status:</strong> 
-                <?php echo $table_exists ? '✓ Logging table active' : '✗ Logging table not ready'; ?> | 
-                <strong>Total logs:</strong> <?= $table_row_count ?>
+                <strong>Status:</strong> ✓ Activity tracking active | 
+                <strong>Total activities:</strong> <?= count($activity_logs) ?>
             </p>
         </div>
         
@@ -245,37 +227,41 @@ try {
             <table class="w-full border-collapse">
                 <thead class="bg-gray-800 text-white">
                     <tr>
-                        <th class="p-3 text-left">Admin Username</th>
                         <th class="p-3 text-left">Activity</th>
+                        <th class="p-3 text-left">Device</th>
+                        <th class="p-3 text-left">OS</th>
                         <th class="p-3 text-left">IP Address</th>
+                        <th class="p-3 text-left">Time In</th>
+                        <th class="p-3 text-left">Time Out</th>
                         <th class="p-3 text-left">Timestamp</th>
                     </tr>
                 </thead>
                 <tbody>
                     <?php foreach ($activity_logs as $log): ?>
                     <tr class="border-b text-sm align-top hover:bg-gray-50">
-                        <td class="p-3"><?= htmlspecialchars($log['username']) ?></td>
                         <td class="p-3"><?= htmlspecialchars($log['activity']) ?></td>
+                        <td class="p-3">
+                            <span class="inline-block px-2 py-1 bg-orange-100 text-orange-800 rounded-full text-xs font-medium">
+                                <?= htmlspecialchars($log['device'] ?? 'Unknown') ?>
+                            </span>
+                        </td>
+                        <td class="p-3"><?= htmlspecialchars($log['os'] ?? 'Unknown') ?></td>
                         <td class="p-3"><?= htmlspecialchars($log['ip_address'] ?? 'N/A') ?></td>
+                        <td class="p-3"><?= htmlspecialchars($log['time_in'] ?? '-') ?></td>
+                        <td class="p-3"><?= htmlspecialchars($log['time_out'] ?? '-') ?></td>
                         <td class="p-3"><?= htmlspecialchars($log['timestamp']) ?></td>
                     </tr>
                     <?php endforeach; ?>
                 </tbody>
             </table>
             <div class="mt-4 text-gray-600 text-sm">
-                Showing <?= count($activity_logs) ?> of <?= $table_row_count ?> total logs
+                Showing <?= count($activity_logs) ?> activities
             </div>
         </div>
         <?php else: ?>
         <div class="bg-gray-50 p-6 rounded text-center">
             <p class="text-gray-600 mb-4">
-                <?php 
-                if ($table_exists && $table_row_count == 0) {
-                    echo 'No activity logs found yet. Activity logs will appear here when admin actions are performed.';
-                } else {
-                    echo 'Unable to retrieve activity logs. Please refresh the page or contact support.';
-                }
-                ?>
+                No admin activities logged yet. Your activities (view, delete, edit) will appear here.
             </p>
             <button onclick="location.reload()" class="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700">Check Again</button>
         </div>
