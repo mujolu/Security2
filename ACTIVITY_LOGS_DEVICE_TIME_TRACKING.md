@@ -2,7 +2,7 @@
 
 ## Summary of Changes
 
-Added device tracking and time in/timeout columns to activity logs for Admin, Moderator, and User/Artist roles.
+Added device tracking and time in/timeout columns to activity logs for Super Admin, Admin (moderator role), and User/Artist roles.
 
 ## Database Schema Updates
 
@@ -14,7 +14,7 @@ Added device tracking and time in/timeout columns to activity logs for Admin, Mo
 
 **File:** [sql_create_admin_activity_logs.sql](sql_create_admin_activity_logs.sql)
 
-### 2. Moderator Activity Logs (`moderator_activity_logs`)
+### 2. Admin Activity Logs (moderator role) (`moderator_activity_logs`)
 **New Table Created** with identical structure to admin logs
 - `device` VARCHAR(50)
 - `time_in` TIMESTAMP
@@ -42,7 +42,7 @@ Added device tracking and time in/timeout columns to activity logs for Admin, Mo
 - `logActivity()` - Updated to support device and time tracking
 - `logAdminAction()` - Convenience wrapper for admin logging
 - `logUserAction()` - Convenience wrapper for user logging
-- `logModeratorAction()` - Convenience wrapper for moderator logging
+- `logModeratorAction()` - Convenience wrapper for admin (moderator role) logging
 
 ### Admin Activity Logging
 
@@ -58,7 +58,7 @@ Added device tracking and time in/timeout columns to activity logs for Admin, Mo
   - Detect device type from User-Agent
   - Store all three new data points in database
 
-### Moderator Activity Logging
+### Admin (Moderator Role) Activity Logging
 
 **File:** [html/moderator_dashboard.php](html/moderator_dashboard.php)
 
@@ -93,7 +93,7 @@ Added device tracking and time in/timeout columns to activity logs for Admin, Mo
 6. **Time Out** (NEW) - Session end time
 7. Timestamp
 
-### Moderator Activity Logs Page
+### Admin Activity Logs Page (moderator role)
 
 **File:** [html/moderator_activity_logs.php](html/moderator_activity_logs.php)
 
@@ -131,8 +131,8 @@ Else
 ## Features
 
 ### Multiple Activity Log Tables
-- **admin_activity_logs** - For platform admin activities
-- **moderator_activity_logs** - For moderator oversight activities  
+- **admin_activity_logs** - For super admin activities
+- **moderator_activity_logs** - For admin (moderator role) oversight activities  
 - **user_activity_logs** - For user/artist activities
 
 ### Device Tracking
@@ -158,7 +158,7 @@ logAdminActivity($conn, 'view', 'Dashboard');
 logAdminActivity($conn, 'delete_user', 'user123', $login_time, $logout_time);
 ```
 
-### Logging Moderator Activity
+### Logging Admin (Moderator Role) Activity
 ```php
 logModeratorActivity($conn, 'review_content', 'post456');
 logModeratorActivity($conn, 'approve_content', 'artwork789', $time_in, $time_out);

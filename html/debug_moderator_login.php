@@ -1,5 +1,5 @@
 <?php
-// Debug script to test moderator login
+// Debug script to test admin (moderator role) login
 session_start();
 
 $servername = "localhost";
@@ -22,7 +22,7 @@ $test_password = isset($_POST['password']) ? trim($_POST['password']) : '';
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Debug Moderator Login</title>
+    <title>Debug Admin Login</title>
     <style>
         body { font-family: Arial; margin: 20px; }
         .section { margin: 20px 0; padding: 15px; border: 1px solid #ddd; }
@@ -32,13 +32,13 @@ $test_password = isset($_POST['password']) ? trim($_POST['password']) : '';
     </style>
 </head>
 <body>
-    <h1>🔍 Moderator Login Debug</h1>
+    <h1>🔍 Admin Login Debug</h1>
     
     <div class="section">
-        <h2>Test Moderator Login</h2>
+        <h2>Test Admin Login</h2>
         <form method="POST">
             <div>
-                <label>Username: <input type="text" name="username" value="<?php echo htmlspecialchars($test_username); ?>" placeholder="Enter moderator username"></label>
+                <label>Username: <input type="text" name="username" value="<?php echo htmlspecialchars($test_username); ?>" placeholder="Enter admin username"></label>
             </div>
             <div>
                 <label>Password: <input type="password" name="password" placeholder="Enter password"></label>
@@ -99,7 +99,7 @@ $test_password = isset($_POST['password']) ? trim($_POST['password']) : '';
     </div>
 
     <div class="section">
-        <h2>Step 2: Check moderators Table</h2>
+        <h2>Step 2: Check moderators Table (legacy admin storage)</h2>
         <?php
         try {
             $stmt = $conn->prepare("SELECT id, username, password FROM moderators WHERE username = :username LIMIT 1");
@@ -108,7 +108,7 @@ $test_password = isset($_POST['password']) ? trim($_POST['password']) : '';
             
             if ($stmt->rowCount() > 0) {
                 $mod = $stmt->fetch(PDO::FETCH_ASSOC);
-                echo '<p class="success">✓ Found in moderators table</p>';
+                echo '<p class="success">✓ Found in moderators table (legacy)</p>';
                 echo '<pre>';
                 echo "ID: " . htmlspecialchars($mod['id']) . "\n";
                 echo "Username: " . htmlspecialchars($mod['username']) . "\n";
@@ -148,7 +148,7 @@ $test_password = isset($_POST['password']) ? trim($_POST['password']) : '';
     </div>
 
     <div class="section">
-        <h2>Available Moderators</h2>
+        <h2>Available Admins (moderator role)</h2>
         <?php
         try {
             // Check both tables
@@ -164,10 +164,10 @@ $test_password = isset($_POST['password']) ? trim($_POST['password']) : '';
                 }
                 echo '</pre>';
             } else {
-                echo '<p>No moderators in registered_users</p>';
+                echo '<p>No admins (moderator role) in registered_users</p>';
             }
             
-            echo '<h3>In moderators table:</h3>';
+            echo '<h3>In moderators table (legacy):</h3>';
             $stmt = $conn->prepare("SELECT id, username FROM moderators ORDER BY id");
             $stmt->execute();
             $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
@@ -179,7 +179,7 @@ $test_password = isset($_POST['password']) ? trim($_POST['password']) : '';
                 }
                 echo '</pre>';
             } else {
-                echo '<p>No moderators in moderators table</p>';
+                echo '<p>No admins in legacy moderators table</p>';
             }
         } catch (Exception $e) {
             echo '<p class="error">Error: ' . htmlspecialchars($e->getMessage()) . '</p>';

@@ -5,6 +5,11 @@ document.addEventListener('DOMContentLoaded', function () {
     const matchMessage = document.getElementById('passwordMatchMessage');
     const form = document.querySelector('form'); // Ensure this matches your form's selector
 
+    // Only proceed if password field exists (i.e., we're on a registration/password page)
+    if (!passwordField || !confirmPasswordField) {
+        return;
+    }
+
     // Disable confirm password field by default
     confirmPasswordField.disabled = true;
 

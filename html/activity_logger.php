@@ -110,6 +110,26 @@ function ensureModeratorActivityLogsSchema($conn) {
         } catch (Exception $e) {
         }
 
+        try {
+            $conn->exec("ALTER TABLE moderator_activity_logs ADD COLUMN device VARCHAR(50) NULL AFTER ip_address");
+        } catch (Exception $e) {
+        }
+
+        try {
+            $conn->exec("ALTER TABLE moderator_activity_logs ADD COLUMN os VARCHAR(50) NULL AFTER device");
+        } catch (Exception $e) {
+        }
+
+        try {
+            $conn->exec("ALTER TABLE moderator_activity_logs ADD COLUMN time_in TIMESTAMP NULL AFTER os");
+        } catch (Exception $e) {
+        }
+
+        try {
+            $conn->exec("ALTER TABLE moderator_activity_logs ADD COLUMN time_out TIMESTAMP NULL AFTER time_in");
+        } catch (Exception $e) {
+        }
+
         $hasTimestampStmt = $conn->query("SELECT COUNT(*) FROM information_schema.COLUMNS
             WHERE TABLE_SCHEMA = DATABASE()
               AND TABLE_NAME = 'moderator_activity_logs'
@@ -178,6 +198,11 @@ function ensureUserActivityLogsSchema($conn) {
 
         try {
             $conn->exec("ALTER TABLE user_activity_logs ADD COLUMN device VARCHAR(50) NULL AFTER ip_address");
+        } catch (Exception $e) {
+        }
+
+        try {
+            $conn->exec("ALTER TABLE user_activity_logs ADD COLUMN os VARCHAR(50) NULL AFTER device");
         } catch (Exception $e) {
         }
 

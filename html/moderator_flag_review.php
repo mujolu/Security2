@@ -10,7 +10,7 @@ if (!isset($_SESSION['role']) || $_SESSION['role'] !== 'moderator') {
 }
 
 $user_id = $_SESSION['user_id'];
-$username = $_SESSION['username'] ?? 'Moderator';
+$username = $_SESSION['username'] ?? 'Admin';
 
 // Ensure moderator activity logs table exists
 try {
@@ -32,7 +32,7 @@ try {
 }
 
 // Log page view
-logActivity($conn, $user_id, 'Accessed Flag Review Dashboard', 'moderator_activity_logs');
+logActivity($conn, $user_id, 'Accessed Flag Review Dashboard (Admin)', 'moderator_activity_logs');
 
 $mysqli = new mysqli("localhost","root","","artlab_db");
 if ($mysqli->connect_error) {
@@ -181,7 +181,7 @@ $stats = [
 <html>
 <head>
 <meta charset="utf-8">
-<title>Flag Review - Moderator Dashboard</title>
+<title>Flag Review - Admin Dashboard</title>
 <script src="https://cdn.tailwindcss.com"></script>
 <style>
     .modal { display: none; position: fixed; z-index: 1000; left: 0; top: 0; width: 100%; height: 100%; background-color: rgba(0,0,0,0.4); }
@@ -195,8 +195,8 @@ $stats = [
 
 <header class="p-4 bg-gray-800 text-white flex justify-between items-center">
     <div class="flex items-center gap-3">
-        <div class="text-lg font-bold">ARTLAB MODERATOR</div>
-        <div class="text-sm text-gray-200">Content Moderation Dashboard</div>
+        <div class="text-lg font-bold">ARTLAB Admin</div>
+        <div class="text-sm text-gray-200">Content Review Dashboard</div>
     </div>
     <div class="flex items-center gap-3">
         <div class="text-sm text-gray-200">Logged in as <?php echo htmlspecialchars($username); ?></div>

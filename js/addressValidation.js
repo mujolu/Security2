@@ -28,6 +28,11 @@ document.addEventListener('DOMContentLoaded', function () {
     const strengthMessage = document.getElementById('passwordStrengthMessage');
     const matchMessage = document.getElementById('passwordMatchMessage');
 
+    // Only proceed if required form fields exist (i.e., we're on a registration page)
+    if (!confirmPasswordField || !passwordField) {
+        return;
+    }
+
     confirmPasswordField.disabled = true;
 
 

@@ -9,9 +9,9 @@ if (!isset($_SESSION['role']) || $_SESSION['role'] !== 'moderator') {
 }
 
 $user_id = $_SESSION['user_id'];
-$username = $_SESSION['username'] ?? 'Moderator';
+$username = $_SESSION['username'] ?? 'Admin';
 
-logActivity($conn, $user_id, 'Accessed Moderator Settings Page', 'moderator_activity_logs');
+logActivity($conn, $user_id, 'Accessed Admin Settings Page', 'moderator_activity_logs');
 
 try {
     $conn->exec("CREATE TABLE IF NOT EXISTS user_security_settings (
@@ -41,6 +41,10 @@ $questionsList = [
 ];
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    if (isset($_POST['edit_mode']) && $_POST['edit_mode'] == 1) {
+        logActivity($conn, $user_id, 'Opened security questions editor in Admin Settings', 'moderator_activity_logs');
+    }
+
     $filled = 0;
 
     for ($i = 1; $i <= 3; $i++) {
@@ -51,6 +55,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     if ($filled < 3) {
         $message = "Please complete all 3 security questions.";
+        logActivity($conn, $user_id, 'Attempted to save security questions with missing fields', 'moderator_activity_logs');
     } else {
         for ($i = 1; $i <= 3; $i++) {
             $question = trim($_POST["security_question_$i"]);
@@ -66,7 +71,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $stmt->execute([$user_id, $i, $question, $answer]);
         }
 
-        logActivity($conn, $user_id, 'Updated security questions in Moderator Settings', 'moderator_activity_logs');
+        logActivity($conn, $user_id, 'Updated security questions in Admin Settings', 'moderator_activity_logs');
         $message = "Security questions saved successfully!";
         $success = true;
         $editMode = false;
@@ -92,13 +97,13 @@ $showForm = !$hasSecurityQuestions || $editMode;
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>Moderator Settings</title>
+    <title>Admin Settings</title>
     <script src="https://cdn.tailwindcss.com"></script>
 </head>
 <body class="bg-gray-100 min-h-screen">
     <header class="bg-gray-800 text-white p-6 flex items-center justify-between shadow-lg">
         <div>
-            <h1 class="text-2xl font-bold">ARTLAB Moderator</h1>
+            <h1 class="text-2xl font-bold">ARTLAB Admin</h1>
             <p class="text-gray-300 text-sm">Account Settings</p>
         </div>
         <div class="flex items-center gap-4">
@@ -112,7 +117,7 @@ $showForm = !$hasSecurityQuestions || $editMode;
 
         <main class="flex-1 p-10 bg-white">
             <div class="mb-8">
-                <h1 class="text-3xl font-semibold text-gray-800">Moderator Settings</h1>
+                <h1 class="text-3xl font-semibold text-gray-800">Admin Settings</h1>
                 <p class="text-gray-500 mt-1">Manage your security questions for account recovery</p>
             </div>
 

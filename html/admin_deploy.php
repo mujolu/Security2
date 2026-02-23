@@ -10,7 +10,54 @@ if (!isset($_SESSION['role']) || $_SESSION['role'] !== 'platform_admin') {
 header("Cache-Control: no-store, no-cache, must-revalidate, max-age=0");
 header("Pragma: no-cache");
 
-$username = $_SESSION['username'] ?? 'platform admin';
+// Get current user's full name and role
+$user_id = $_SESSION['user_id'] ?? '';
+$user_full_name = 'Super Admin';
+$user_role = 'Super Admin';
+
+if ($user_id) {
+    try {
+        $user_stmt_temp = $conn->prepare("SELECT first_name, last_name, role FROM registered_users WHERE id = ?");
+        $user_stmt_temp->execute([$user_id]);
+        $user_data = $user_stmt_temp->fetch(PDO::FETCH_ASSOC);
+        if ($user_data) {
+            $user_full_name = trim(($user_data['first_name'] ?? '') . ' ' . ($user_data['last_name'] ?? ''));
+            if (!$user_full_name) {
+                $user_full_name = 'Super Admin';
+            }
+            // Set role label based on role value
+            if ($user_data['role'] === 'platform_admin') {
+                $user_role = 'Super Admin';
+            } else {
+                $user_role = ucfirst($user_data['role'] ?? 'artist');
+            }
+        }
+    } catch (Exception $e) {
+        // Use defaults
+    }
+}
+
+$username = $_SESSION['username'] ?? 'super admin';
+
+try {
+    $conn->exec("ALTER TABLE registered_users ADD COLUMN status VARCHAR(20) DEFAULT 'active'");
+} catch (Exception $e) {
+}
+
+try {
+    $conn->exec("ALTER TABLE registered_users ADD COLUMN ban_reason VARCHAR(255) NULL");
+} catch (Exception $e) {
+}
+
+try {
+    $conn->exec("ALTER TABLE registered_users ADD COLUMN status_reason VARCHAR(255) NULL");
+} catch (Exception $e) {
+}
+
+try {
+    $conn->exec("ALTER TABLE registered_users ADD COLUMN status_updated_at TIMESTAMP NULL");
+} catch (Exception $e) {
+}
 
 // Include the logging function
 function createAdminActivityLogsTable($conn) {
@@ -31,6 +78,36 @@ function createAdminActivityLogsTable($conn) {
             INDEX idx_user_id (user_id),
             INDEX idx_timestamp (timestamp)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+
+        try {
+            $conn->exec("ALTER TABLE admin_activity_logs ADD COLUMN device VARCHAR(50) NULL AFTER ip_address");
+        } catch (Exception $e) {
+        }
+
+        try {
+            $conn->exec("ALTER TABLE admin_activity_logs ADD COLUMN os VARCHAR(50) NULL AFTER device");
+        } catch (Exception $e) {
+        }
+
+        try {
+            $conn->exec("ALTER TABLE admin_activity_logs ADD COLUMN time_in TIMESTAMP NULL AFTER os");
+        } catch (Exception $e) {
+        }
+
+        try {
+            $conn->exec("ALTER TABLE admin_activity_logs ADD COLUMN time_out TIMESTAMP NULL AFTER time_in");
+        } catch (Exception $e) {
+        }
+
+        try {
+            $conn->exec("ALTER TABLE admin_activity_logs ADD COLUMN timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP");
+        } catch (Exception $e) {
+        }
+
+        try {
+            $conn->exec("ALTER TABLE admin_activity_logs ADD INDEX idx_timestamp (timestamp)");
+        } catch (Exception $e) {
+        }
     } catch (Exception $e) {
         // Table might already exist with proper schema
     }
@@ -88,11 +165,17 @@ function logAdminActivity($conn, $actionType, $details = '', $time_in = null, $t
     $activity = match($actionType) {
         'view' => "Viewed page: $details",
         'delete_user' => "Deleted user ID: $details",
-        'delete_moderator' => "Deleted moderator ID: $details",
-        'add_moderator' => "Added moderator: $details",
+        'delete_moderator' => "Deleted admin ID: $details",
+        'add_moderator' => "Added admin: $details",
         'approve_artwork' => "Approved artwork ID: $details",
         'edit_user' => "Edited user ID: $details",
         'ban_user' => "Banned user ID: $details",
+        'ban_admin' => "Banned admin: $details",
+        'change_admin_role' => "Changed admin role: $details",
+        'disable_admin' => "Disabled admin: $details",
+        'enable_admin' => "Enabled admin: $details",
+        'restore_admin' => "Restored admin: $details",
+        'unban_admin' => "Unbanned admin: $details",
         'logout' => "Logged out",
         default => $details
     };
@@ -212,9 +295,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
                 // Insert moderator into registered_users with ALL fields
                 try {
                     $role = 'moderator';
+                    $status = 'active';
                     $stmt = $conn->prepare("INSERT INTO registered_users 
-                        (id, first_name, middle_initial, last_name, extension_name, username, email, password, sex, purok, barangay, city, province, country, zip_code, birthdate, age, role) 
-                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
+                        (id, first_name, middle_initial, last_name, extension_name, username, email, password, sex, purok, barangay, city, province, country, zip_code, birthdate, age, role, status) 
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
                     
                     $stmt->execute([
                         $moderator_id,
@@ -234,28 +318,181 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
                         $zip_code,
                         $birthdate,
                         $age,
-                        $role
+                        $role,
+                        $status
                     ]);
                     
                     // Log the moderator addition
                     $moderator_info = "$first_name $last_name (ID: $moderator_id, Username: $username, Email: $email)";
                     logAdminActivity($conn, 'add_moderator', $moderator_info);
                     
-                    $success_message = "✓ Moderator '$first_name $last_name' (ID: $moderator_id) has been successfully added!";
+                    $success_message = "✓ Admin '$first_name $last_name' (ID: $moderator_id) has been successfully added!";
                 } catch (Exception $e) {
-                    $error_message = "Error adding moderator: " . $e->getMessage();
+                    $error_message = "Error adding admin: " . $e->getMessage();
                 }
             }
         } catch (Exception $e) {
-            $error_message = "Error checking moderator: " . $e->getMessage();
+            $error_message = "Error checking admin: " . $e->getMessage();
         }
     }
     // Don't redirect - stay on page to show message
 }
 
+// Handle admin disable/enable
+if (isset($_GET['toggle_admin'], $_GET['state'])) {
+    $modId = $_GET['toggle_admin'];
+    $state = $_GET['state'] === 'disable' ? 'disabled' : 'active';
+
+    try {
+        $info_stmt = $conn->prepare("SELECT first_name, last_name, username FROM registered_users WHERE id = ? AND role = 'moderator'");
+        $info_stmt->execute([$modId]);
+        $mod_info = $info_stmt->fetch(PDO::FETCH_ASSOC);
+        $mod_details = $mod_info
+            ? ($mod_info['first_name'] . ' ' . $mod_info['last_name'] . ' (ID:' . $modId . ', Username: ' . $mod_info['username'] . ')')
+            : "ID: $modId";
+    } catch (Exception $e) {
+        $mod_details = "ID: $modId";
+    }
+
+    try {
+        if ($state === 'disabled') {
+            $status_reason = 'Disabled by Super Admin';
+            $stmt = $conn->prepare("UPDATE registered_users SET status = ?, status_reason = ?, status_updated_at = NOW() WHERE id = ? AND role = 'moderator'");
+            $stmt->execute([$state, $status_reason, $modId]);
+        } else {
+            $stmt = $conn->prepare("UPDATE registered_users SET status = ?, status_reason = NULL, status_updated_at = NOW() WHERE id = ? AND role = 'moderator'");
+            $stmt->execute([$state, $modId]);
+        }
+        logAdminActivity($conn, $state === 'disabled' ? 'disable_admin' : 'enable_admin', $mod_details);
+    } catch (Exception $e) {
+        // ignore
+    }
+
+    header('Location: admin_deploy.php');
+    exit();
+}
+
+if (isset($_GET['restore_admin'])) {
+    $modId = $_GET['restore_admin'];
+    try {
+        $stmt = $conn->prepare("UPDATE registered_users SET status = 'active', ban_reason = NULL, status_reason = NULL, status_updated_at = NOW() WHERE id = ? AND role = 'moderator'");
+        $stmt->execute([$modId]);
+        logAdminActivity($conn, 'restore_admin', "ID: $modId");
+    } catch (Exception $e) {
+        // ignore
+    }
+    header('Location: admin_deploy.php');
+    exit();
+}
+
+if (isset($_GET['ban_admin'])) {
+    $id = $_GET['ban_admin'];
+    
+    if ($id == $_SESSION['user_id']) { // prevent self-ban
+        header("Location: admin_deploy.php");
+        exit();
+    }
+
+    $ban_reason = trim($_GET['ban_reason'] ?? '');
+    if ($ban_reason === '') {
+        $ban_reason = 'Violation of platform rules.';
+    }
+    $ban_reason = substr($ban_reason, 0, 255);
+    
+    // Get admin info before banning for logging
+    try {
+        $info_stmt = $conn->prepare("SELECT first_name, last_name, username FROM registered_users WHERE id = ? AND role = 'moderator'");
+        $info_stmt->execute([$id]);
+        $admin_info = $info_stmt->fetch(PDO::FETCH_ASSOC);
+        
+        if ($admin_info) {
+            $admin_details = ($admin_info['first_name'] ?? '') . ' ' . ($admin_info['last_name'] ?? '') . ' (ID:' . $id . ', Username: ' . $admin_info['username'] . ')';
+        } else {
+            $admin_details = "ID: $id";
+        }
+    } catch (Exception $e) {
+        $admin_details = "ID: $id";
+    }
+    
+    $status_reason = 'Banned by Super Admin';
+    try {
+        $stmt = $conn->prepare("UPDATE registered_users SET status='banned', ban_reason = ?, status_reason = ?, status_updated_at = NOW() WHERE id = ? AND role = 'moderator'");
+        $stmt->execute([$ban_reason, $status_reason, $id]);
+        
+        // Log the ban
+        $log_details = ($admin_details ?? "ID: $id") . " | Reason: " . $ban_reason;
+        logAdminActivity($conn, 'ban_admin', $log_details);
+    } catch (Exception $e) {
+        // ignore
+    }
+    
+    header("Location: admin_deploy.php");
+    exit();
+}
+
+if (isset($_GET['change_admin_role'])) {
+    $id = $_GET['change_admin_role'];
+    $newRole = $_GET['new_admin_role'] ?? 'artist';
+    
+    // Validate role
+    if (!in_array($newRole, ['artist', 'moderator'])) {
+        $newRole = 'artist';
+    }
+    
+    // Prevent changing own role
+    if ($id == $_SESSION['user_id']) {
+        header("Location: admin_deploy.php");
+        exit();
+    }
+    
+    // Get user info before changing role for logging
+    try {
+        $info_stmt = $conn->prepare("SELECT first_name, last_name, username, role FROM registered_users WHERE id = ? AND role = 'moderator'");
+        $info_stmt->execute([$id]);
+        $admin_info = $info_stmt->fetch(PDO::FETCH_ASSOC);
+        
+        if ($admin_info) {
+            $oldRole = $admin_info['role'] ?? 'moderator';
+            $admin_details = ($admin_info['first_name'] ?? '') . ' ' . ($admin_info['last_name'] ?? '') . ' (ID:' . $id . ', Username: ' . $admin_info['username'] . ')';
+            
+            // Change role
+            try {
+                $stmt = $conn->prepare("UPDATE registered_users SET role = ? WHERE id = ?");
+                $stmt->execute([$newRole, $id]);
+                
+                // Log the role change
+                $roleLabel = $newRole === 'moderator' ? 'Admin' : 'Artist';
+                $oldRoleLabel = $oldRole === 'moderator' ? 'Admin' : 'Artist';
+                $log_details = $admin_details . " | Changed from $oldRoleLabel to $roleLabel";
+                logAdminActivity($conn, 'change_admin_role', $log_details);
+            } catch (Exception $e) {
+                // ignore
+            }
+        }
+    } catch (Exception $e) {
+        // ignore
+    }
+    
+    header("Location: admin_deploy.php");
+    exit();
+}
+
+if (isset($_GET['unban_admin'])) {
+    $modId = $_GET['unban_admin'];
+    try {
+        $stmt = $conn->prepare("UPDATE registered_users SET status = 'active', ban_reason = NULL, status_reason = NULL, status_updated_at = NOW() WHERE id = ? AND role = 'moderator'");
+        $stmt->execute([$modId]);
+        logAdminActivity($conn, 'unban_admin', "ID: $modId");
+    } catch (Exception $e) {
+        // ignore
+    }
+    header('Location: admin_deploy.php');
+    exit();
+}
+
 // Handle moderator deletion - prefer deleting from registered_users role=moderator
 if (isset($_GET['delete_moderator'])) {
-    $modId = (int)$_GET['delete_moderator'];
+    $modId = $_GET['delete_moderator'];
     
     // Get moderator info before deleting for logging
     try {
@@ -271,13 +508,14 @@ if (isset($_GET['delete_moderator'])) {
     }
     
     try {
-        $stmt = $conn->prepare("DELETE FROM registered_users WHERE id = ? AND role = 'moderator'");
-        $stmt->execute([$modId]);
+        $status_reason = 'Deleted by Super Admin';
+        $stmt = $conn->prepare("UPDATE registered_users SET status = 'deleted', status_reason = ?, status_updated_at = NOW() WHERE id = ? AND role = 'moderator'");
+        $stmt->execute([$status_reason, $modId]);
         
         // Log the deletion
         logAdminActivity($conn, 'delete_moderator', $mod_details ?? "ID: $modId");
         
-        // fallback: if not deleted (maybe stored in moderators table), try there
+        // fallback: if not updated (maybe stored in moderators table), try there
         if ($stmt->rowCount() === 0) {
             $stmt2 = $conn->prepare("DELETE FROM moderators WHERE id = ?");
             $stmt2->execute([$modId]);
@@ -291,7 +529,7 @@ if (isset($_GET['delete_moderator'])) {
 }
 
 // Log page view
-logAdminActivity($conn, 'view', 'Deploy Moderators Page');
+logAdminActivity($conn, 'view', 'Deploy Admins Page');
 
 // Fetch existing moderators from registered_users
 $moderators = [];
@@ -317,9 +555,11 @@ try {
                     last_name AS lastname, 
                     email, 
                     username,
-                    reg_date AS date_created
+                    reg_date AS date_created,
+                    COALESCE(status, 'active') AS status
                 FROM registered_users 
-                WHERE role = 'moderator' 
+                WHERE role = 'moderator'
+                  AND (status IS NULL OR status != 'deleted')
                 ORDER BY id DESC
             ");
             $mods_stmt->execute();
@@ -328,7 +568,7 @@ try {
         } catch (Exception $e_fetch) {
             // If flexible query fails, try basic query
             try {
-                $mods_stmt = $conn->prepare("SELECT id, first_name AS firstname, middle_initial AS middlename, last_name AS lastname, email, username, reg_date AS date_created FROM registered_users WHERE role = 'moderator' ORDER BY id DESC");
+                $mods_stmt = $conn->prepare("SELECT id, first_name AS firstname, middle_initial AS middlename, last_name AS lastname, email, username, reg_date AS date_created, COALESCE(status, 'active') AS status FROM registered_users WHERE role = 'moderator' AND (status IS NULL OR status != 'deleted') ORDER BY id DESC");
                 $mods_stmt->execute();
                 $moderators = $mods_stmt->fetchAll(PDO::FETCH_ASSOC);
                 $debug_message .= " | Retrieved " . count($moderators) . " moderators (basic query)";
@@ -364,7 +604,18 @@ try {
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://fonts.googleapis.com/css2?family=Permanent+Marker&display=swap" rel="stylesheet">
-    <title>Deploy Moderators - Artlab Admin</title>
+    <title>Deploy Admins - Artlab Super Admin</title>
+
+    <script>
+    function doBan(userId, username) {
+        var reason = prompt('Enter ban reason for ' + username + ':');
+        if (reason === null) return false;
+        var finalReason = reason.trim().length > 0 ? reason.trim() : 'Violation of platform rules.';
+        window.location.href = '?ban_admin=' + userId + '&ban_reason=' + encodeURIComponent(finalReason);
+        return false;
+    }
+    </script>
+
     <style>
         body { font-family: Arial, sans-serif; margin: 0; padding: 0; background-color: #515151; }
         header { background-color: #333; color: white; padding: 10px 0; display:flex; justify-content:space-between; align-items:center; padding:10px 20px; border-radius:12px; }
@@ -388,18 +639,18 @@ try {
 <div class="layout flex w-full min-h-screen">
 
 <aside class="w-64 bg-gray-800 min-h-screen p-6 flex flex-col">
-    <h2 class="text-2xl font-bold text-white mb-5">ARTLAB ADMIN</h2>
+    <h2 class="text-2xl font-bold text-white mb-5">ARTLAB SUPERADMIN</h2>
 
     <div class="flex flex-col items-center text-center mt-8">
         <img src="/Security2/images/profilepic.jpg" class="w-24 h-24 rounded-full border-4 border-yellow-500 mb-4">
-         <h4 class="text-white font-semibold"><?php echo htmlspecialchars($username); ?></h4>
-        <p class="text-gray-400 text-sm">Platform Admin</p>
+         <h4 class="text-white font-semibold"><?php echo htmlspecialchars($user_full_name); ?></h4>
+        <p class="text-gray-400 text-sm"><?php echo htmlspecialchars($user_role); ?></p>
     </div>
 
     <nav class="flex flex-col gap-4 mt-8">
         <a href="admin_dashboard.php" class="sidebar-link bg-gray-700 text-white rounded-lg px-4 py-3">User Management</a>
         <a href="admin_flag_review.php" class="sidebar-link bg-gray-700 text-white rounded-lg px-4 py-3">Flag Audit</a>
-        <a href="admin_deploy.php" class="sidebar-link bg-yellow-700 text-white rounded-lg px-4 py-3">Deploy Moderators</a>
+        <a href="admin_deploy.php" class="sidebar-link bg-yellow-700 text-white rounded-lg px-4 py-3">Deploy Admins</a>
         <a href="admin_marketplace.php" class="sidebar-link bg-gray-700 text-white rounded-lg px-4 py-3">Marketplace Art </a>
         <a href="admin_collab.php" class="sidebar-link bg-gray-700 text-white rounded-lg px-4 py-3">Collaboration Oversight</a>
         <a href="admin_activity.php" class="sidebar-link bg-gray-700 text-white rounded-lg px-4 py-3">Activity Logs</a>
@@ -408,15 +659,15 @@ try {
 
 <main class="flex-1 p-6">
     <header class="bg-gray-800 text-white rounded-xl p-6 mb-6 flex justify-between">
-        <h3 class="text-xl font-bold">Deploy Moderators</h3>
+        <h3 class="text-xl font-bold">Deploy Admins</h3>
         <a href="logout.php" class="bg-gray-700 px-4 py-2 rounded hover:bg-yellow-700">Logout</a>
     </header>
 
     <section class="bg-white rounded-xl shadow-lg p-6">
         <div class="flex items-center justify-between mb-4">
-            <h2 class="text-2xl font-bold">Deploy Moderators</h2>
+            <h2 class="text-2xl font-bold">Deploy Admins</h2>
             <div>
-                <button id="showAddBtn" class="bg-green-600 text-white px-4 py-2 rounded mr-2">Add Moderator</button>
+                <button id="showAddBtn" class="bg-green-600 text-white px-4 py-2 rounded mr-2">Add Admin</button>
                 <button onclick="location.reload()" class="bg-blue-600 text-white px-4 py-2 rounded">Refresh List</button>
             </div>
         </div>
@@ -440,7 +691,7 @@ try {
         <?php endif; ?>
 
         <div id="addForm" class="hidden mb-6 bg-gray-50 rounded p-6 max-w-4xl">
-            <h3 class="text-xl font-bold mb-4">Create New Moderator</h3>
+            <h3 class="text-xl font-bold mb-4">Create New Admin</h3>
             <form id="moderatorForm" method="post" action="admin_deploy.php" class="space-y-6" novalidate>
                 <input type="hidden" name="action" value="add_moderator">
                 
@@ -563,7 +814,7 @@ try {
                 <!-- Buttons -->
                 <div class="flex justify-end gap-3">
                     <button type="button" id="cancelAdd" class="bg-gray-300 text-black px-6 py-2 rounded hover:bg-gray-400">Cancel</button>
-                    <button type="submit" class="bg-blue-600 text-white px-6 py-2 rounded hover:bg-blue-700">Create Moderator</button>
+                    <button type="submit" class="bg-blue-600 text-white px-6 py-2 rounded hover:bg-blue-700">Create Admin</button>
                 </div>
             </form>
         </div>
@@ -579,12 +830,15 @@ try {
                         <th class="p-3 text-left">Email</th>
                         <th class="p-3 text-left">Username</th>
                         <th class="p-3 text-left">Date Created</th>
+                        <th class="p-3 text-left">Status</th>
                         <th class="p-3 text-left">Action</th>
+                        <th class="p-3 text-left">Role Mgmt</th>
                     </tr>
                 </thead>
                 <tbody>
                     <?php foreach ($moderators as $mod): ?>
                         <tr class="border-b text-sm align-top hover:bg-gray-50">
+                            <?php $status = $mod['status'] ?? 'legacy'; ?>
                             <td class="p-3"><?= htmlspecialchars($mod['firstname'] ?? '') ?></td>
                             <td class="p-3"><?= htmlspecialchars($mod['middlename'] ?? '') ?></td>
                             <td class="p-3"><?= htmlspecialchars($mod['lastname'] ?? '') ?></td>
@@ -592,23 +846,98 @@ try {
                             <td class="p-3"><span class="font-mono text-sm"><?= htmlspecialchars($mod['username'] ?? '') ?></span></td>
                             <td class="p-3 text-gray-600"><?= htmlspecialchars($mod['date_created'] ?? 'N/A') ?></td>
                             <td class="p-3">
-                                <a href="?delete_moderator=<?= $mod['id'] ?>" class="bg-red-600 text-white px-3 py-1 rounded text-sm hover:bg-red-700" onclick="return confirm('Delete this moderator?\n\n<?= htmlspecialchars($mod['firstname'] . ' ' . $mod['lastname']) ?>')">Delete</a>
+                                <?php if ($status === 'disabled'): ?>
+                                    <span class="inline-block px-2 py-1 rounded text-xs font-semibold bg-red-100 text-red-700">Disabled</span>
+                                <?php elseif ($status === 'banned'): ?>
+                                    <span class="inline-block px-2 py-1 rounded text-xs font-semibold bg-yellow-100 text-yellow-700">Banned</span>
+                                <?php elseif ($status === 'legacy'): ?>
+                                    <span class="inline-block px-2 py-1 rounded text-xs font-semibold bg-gray-100 text-gray-600">Legacy</span>
+                                <?php else: ?>
+                                    <span class="inline-block px-2 py-1 rounded text-xs font-semibold bg-green-100 text-green-700">Active</span>
+                                <?php endif; ?>
+                            </td>
+                            <td class="p-3">
+                                <?php if ($status !== 'legacy'): ?>
+                                    <?php if ($status === 'disabled'): ?>
+                                        <a href="?toggle_admin=<?= $mod['id'] ?>&state=enable" class="bg-green-600 text-white px-3 py-1 rounded text-sm hover:bg-green-700 mr-2" onclick="return confirm('Enable this admin?\n\n<?= htmlspecialchars($mod['firstname'] . ' ' . $mod['lastname']) ?>')">Enable</a>
+                                    <?php elseif ($status === 'banned'): ?>
+                                        <a href="?unban_admin=<?= $mod['id'] ?>" class="bg-green-600 text-white px-3 py-1 rounded text-sm hover:bg-green-700 mr-2" onclick="return confirm('Unban this admin?\n\n<?= htmlspecialchars($mod['firstname'] . ' ' . $mod['lastname']) ?>')">Unban</a>
+                                    <?php else: ?>
+                                        <a href="?toggle_admin=<?= $mod['id'] ?>&state=disable" class="bg-yellow-600 text-white px-3 py-1 rounded text-sm hover:bg-yellow-700 mr-2" onclick="return confirm('Disable this admin?\n\n<?= htmlspecialchars($mod['firstname'] . ' ' . $mod['lastname']) ?>')">Disable</a>
+                                        <a href="#" class="bg-orange-600 text-white px-3 py-1 rounded text-sm hover:bg-orange-700 mr-2" onclick="return doBan('<?= htmlspecialchars($mod['id'], ENT_QUOTES) ?>', '<?= htmlspecialchars($mod['firstname'] . ' ' . $mod['lastname'], ENT_QUOTES) ?>')">Ban</a>
+                                    <?php endif; ?>
+                                <?php endif; ?>
+                                <a href="?delete_moderator=<?= $mod['id'] ?>" class="bg-red-600 text-white px-3 py-1 rounded text-sm hover:bg-red-700" onclick="return confirm('Delete this admin?\n\n<?= htmlspecialchars($mod['firstname'] . ' ' . $mod['lastname']) ?>')">Delete</a>
+                            </td>
+                            <td class="p-3 space-x-1">
+                                <a href="?change_admin_role=<?= htmlspecialchars($mod['id'], ENT_QUOTES) ?>&new_admin_role=artist"
+                                class="bg-purple-600 text-white px-2 py-1 rounded text-sm"
+                                onclick="return confirm('Remove Admin status? User will become Artist.')">
+                                Remove Admin
+                                </a>
                             </td>
                         </tr>
                     <?php endforeach; ?>
                 </tbody>
             </table>
             <div class="mt-3 text-sm text-gray-600">
-                Total moderators: <strong><?= count($moderators) ?></strong>
+                Total admins: <strong><?= count($moderators) ?></strong>
             </div>
+            <section class="bg-gray-50 rounded-xl shadow-inner p-5 mt-6">
+                <h3 class="text-lg font-semibold mb-4">Admin Action History (Disable/Ban/Delete)</h3>
+                <?php
+                $admin_history_stmt = $conn->prepare("\n                    SELECT id, first_name, last_name, username, status, ban_reason, status_reason, status_updated_at\n                    FROM registered_users\n                    WHERE role = 'moderator'
+                      AND status IN ('disabled', 'deleted', 'banned')\n                    ORDER BY status_updated_at DESC\n                    LIMIT 50\n                ");
+                $admin_history_stmt->execute();
+                $admin_history_rows = $admin_history_stmt->fetchAll(PDO::FETCH_ASSOC);
+                ?>
+                <?php if (!empty($admin_history_rows)): ?>
+                    <table class="w-full border-collapse text-sm">
+                        <thead class="bg-gray-800 text-white">
+                            <tr>
+                                <th class="p-3 text-left">ID</th>
+                                <th class="p-3 text-left">Name</th>
+                                <th class="p-3 text-left">Username</th>
+                                <th class="p-3 text-left">Status</th>
+                                <th class="p-3 text-left">Reason</th>
+                                <th class="p-3 text-left">Updated</th>
+                                <th class="p-3 text-left">Undo</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <?php foreach ($admin_history_rows as $row): ?>
+                                <tr class="border-b">
+                                    <td class="p-3"><?= htmlspecialchars($row['id']) ?></td>
+                                    <td class="p-3"><?= htmlspecialchars(($row['first_name'] ?? '') . ' ' . ($row['last_name'] ?? '')) ?></td>
+                                    <td class="p-3"><?= htmlspecialchars($row['username'] ?? '') ?></td>
+                                    <td class="p-3"><?= htmlspecialchars($row['status'] ?? '') ?></td>
+                                    <td class="p-3"><?= htmlspecialchars($row['ban_reason'] ?? $row['status_reason'] ?? '') ?></td>
+                                    <td class="p-3"><?= htmlspecialchars($row['status_updated_at'] ?? '') ?></td>
+                                    <td class="p-3">
+                                        <?php if ($row['status'] === 'disabled'): ?>
+                                            <a class="bg-green-600 text-white px-3 py-1 rounded" href="?toggle_admin=<?= $row['id'] ?>&state=enable">Enable</a>
+                                        <?php elseif ($row['status'] === 'banned'): ?>
+                                            <a class="bg-green-600 text-white px-3 py-1 rounded" href="?unban_admin=<?= $row['id'] ?>">Unban</a>
+                                        <?php elseif ($row['status'] === 'deleted'): ?>
+                                            <a class="bg-blue-600 text-white px-3 py-1 rounded" href="?restore_admin=<?= $row['id'] ?>">Restore</a>
+                                        <?php endif; ?>
+                                    </td>
+                                </tr>
+                            <?php endforeach; ?>
+                        </tbody>
+                    </table>
+                <?php else: ?>
+                    <p class="text-gray-500">No recent admin disable/ban/delete actions found.</p>
+                <?php endif; ?>
+            </section>
             <?php else: ?>
             <div class="bg-gray-50 p-8 rounded text-center">
-                <p class="text-gray-600 mb-2">No moderators currently displayed.</p>
+                <p class="text-gray-600 mb-2">No admins currently displayed.</p>
                 <?php if (!empty($debug_message)): ?>
                 <p class="text-blue-600 text-sm mb-4">Status: <?= htmlspecialchars($debug_message) ?></p>
                 <?php endif; ?>
                 <p class="text-gray-500 text-sm mb-4">If moderators were added but don't appear, click "Refresh List" to reload the data.</p>
-                <button id="showAddBtn" class="bg-green-600 text-white px-6 py-2 rounded hover:bg-green-700">Add Moderator</button>
+                <button id="showAddBtn" class="bg-green-600 text-white px-6 py-2 rounded hover:bg-green-700">Add Admin</button>
             </div>
             <?php endif; ?>
         </div>

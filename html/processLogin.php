@@ -18,6 +18,17 @@ try {
     die("Connection failed: " . $e->getMessage());
 }
 
+// Ensure status/ban_reason columns exist for account disable/ban feature
+try {
+    $conn->exec("ALTER TABLE registered_users ADD COLUMN status VARCHAR(20) DEFAULT 'active'");
+} catch (Exception $e) {
+}
+
+try {
+    $conn->exec("ALTER TABLE registered_users ADD COLUMN ban_reason VARCHAR(255) NULL");
+} catch (Exception $e) {
+}
+
 // Create login_logs table if it doesn't exist
 try {
     $conn->exec("CREATE TABLE IF NOT EXISTS login_logs (
@@ -50,7 +61,7 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
     $input_password = trim($_POST['password']);
 
     // Prepare and execute the query to check if the username exists
-    $sql = "SELECT id, username, password, role 
+    $sql = "SELECT id, username, password, role, status, ban_reason 
         FROM registered_users 
         WHERE username = :username";
     $stmt = $conn->prepare($sql);
@@ -63,6 +74,8 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
         $id = $user['id'];
         $db_username = $user['username'];
         $db_password = $user['password'];
+        $status = strtolower($user['status'] ?? 'active');
+        $ban_reason = $user['ban_reason'] ?? '';
 
         // Verify the password
         $stored_password = trim($db_password); // Remove any whitespace
@@ -90,6 +103,21 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
         }
         
         if ($password_correct) {
+            if ($status === 'disabled') {
+                echo "<script>alert('Your account is disabled. Please contact your administrator.');</script>";
+                exit();
+            }
+
+            if ($status === 'banned') {
+                $reason_text = trim($ban_reason) !== '' ? $ban_reason : 'Violation of platform rules.';
+                echo "<script>alert('Your account has been banned. Reason: " . addslashes($reason_text) . "');</script>";
+                exit();
+            }
+
+            if ($status === 'deleted') {
+                echo "<script>alert('Your account has been deleted. Please contact your administrator.');</script>";
+                exit();
+            }
             // Password is correct, set session variables
             $_SESSION['user_id'] = $id;
             $_SESSION['username'] = $db_username;

@@ -10,7 +10,37 @@ if (!isset($_SESSION['role']) || $_SESSION['role'] !== 'platform_admin') {
 }
 
 $user_id = $_SESSION['user_id'];
-$username = $_SESSION['username'] ?? 'Admin';
+
+// Get current user's full name and role
+$user_full_name = 'Super Admin';
+$user_role = 'Super Admin';
+
+if ($user_id) {
+    try {
+        $user_stmt_temp = $conn->prepare("SELECT first_name, last_name, role FROM registered_users WHERE id = ?");
+        $user_stmt_temp->execute([$user_id]);
+        $user_data = $user_stmt_temp->fetch(PDO::FETCH_ASSOC);
+        if ($user_data) {
+            $user_full_name = trim(($user_data['first_name'] ?? '') . ' ' . ($user_data['last_name'] ?? ''));
+            if (!$user_full_name) {
+                $user_full_name = 'Super Admin';
+            }
+            // Set role label based on role value
+            if ($user_data['role'] === 'platform_admin') {
+                $user_role = 'Super Admin';
+            } else {
+                $user_role = ucfirst($user_data['role'] ?? 'artist');
+            }
+        }
+    } catch (Exception $e) {
+        // Use defaults
+    }
+}
+
+$username = $_SESSION['username'] ?? 'Super Admin';
+
+// Log page view for super admin
+logAdminActivity($conn, 'view', 'Flag Audit Dashboard');
 
 // Ensure admin activity logs table exists
 try {
@@ -32,7 +62,7 @@ try {
 }
 
 // Log page view
-logPageView($conn, $user_id, 'Flag Review Dashboard (Admin)', 'admin_activity_logs');
+logPageView($conn, $user_id, 'Flag Review Dashboard (Super Admin)', 'admin_activity_logs');
 
 $mysqli = new mysqli("localhost","root","","artlab_db");
 if ($mysqli->connect_error) {
@@ -128,6 +158,9 @@ if ($result) {
     $result->close();
 }
 
+// Log specific action for viewing flagged posts list
+logAdminActivity($conn, 'view', 'Viewed reported posts list (' . count($flagged_posts) . ' posts)');
+
 // Get stats
 $stats_query = "SELECT 
     SUM(CASE WHEN reported_status = 'flagged' THEN 1 ELSE 0 END) as pending_flags,
@@ -175,7 +208,7 @@ if ($mod_result) {
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <script src="https://cdn.tailwindcss.com"></script>
-    <title>Flag Audit - Admin Dashboard</title>
+    <title>Flag Audit - Super Admin Dashboard</title>
 </head>
 
 <body class="bg-gray-100 min-h-screen">
@@ -184,16 +217,16 @@ if ($mod_result) {
 <!-- 🔥 SIDEBAR -->
 <aside class="w-64 bg-gray-800 min-h-screen p-6 flex flex-col">
 
-    <h2 class="text-2xl font-bold text-white mb-5">ARTLAB ADMIN</h2>
+    <h2 class="text-2xl font-bold text-white mb-5">ARTLAB SUPERADMIN</h2>
 
     <div class="flex flex-col items-center text-center mt-8">
         <img src="/Security2/images/profilepic.jpg"
              class="w-24 h-24 rounded-full border-4 border-yellow-500 mb-4">
          <h4 class="text-white font-semibold">
-            <?php echo htmlspecialchars($username); ?>
+            <?php echo htmlspecialchars($user_full_name); ?>
         </h4>
         <p class="text-gray-400 text-sm">
-            Platform Admin
+            <?php echo htmlspecialchars($user_role); ?>
         </p>
     </div>
 
@@ -202,7 +235,7 @@ if ($mod_result) {
 
         <a href="admin_dashboard.php" class="sidebar-link bg-gray-700 text-white rounded-lg px-4 py-3">User Management</a>
         <a href="admin_flag_review.php" class="sidebar-link bg-yellow-700 text-white rounded-lg px-4 py-3">Flag Audit</a>
-        <a href="admin_deploy.php" class="sidebar-link bg-gray-700 text-white rounded-lg px-4 py-3">Deploy Moderators</a>
+        <a href="admin_deploy.php" class="sidebar-link bg-gray-700 text-white rounded-lg px-4 py-3">Deploy Admins</a>
         <a href="admin_marketplace.php" class="sidebar-link bg-gray-700 text-white rounded-lg px-4 py-3">Marketplace Art </a>
         <a href="admin_collab.php" class="sidebar-link bg-gray-700 text-white rounded-lg px-4 py-3">Collaboration Oversight</a>
         <a href="admin_activity.php" class="sidebar-link bg-gray-700 text-white rounded-lg px-4 py-3">Activity Logs</a>
@@ -246,15 +279,15 @@ if ($mod_result) {
             </div>
         </div>
 
-        <!-- Moderator Performance Stats -->
+        <!-- Admin Performance Stats -->
         <?php if (!empty($moderator_stats)): ?>
         <div class="bg-white border border-gray-300 rounded-lg p-6 mb-8 shadow-md">
-            <h2 class="text-xl font-semibold text-gray-800 mb-4">Moderator Performance</h2>
+            <h2 class="text-xl font-semibold text-gray-800 mb-4">Admin Performance</h2>
             <div class="overflow-x-auto">
                 <table class="w-full text-sm">
                     <thead class="bg-gray-100 border-b border-gray-300">
                         <tr>
-                            <th class="text-left p-3">Moderator</th>
+                            <th class="text-left p-3">Admin</th>
                             <th class="text-center p-3">Total Resolutions</th>
                             <th class="text-center p-3">Approved</th>
                             <th class="text-center p-3">Removed</th>
@@ -319,23 +352,23 @@ if ($mod_result) {
                                     <?php endif; ?>
                                 </div>
 
-                                <!-- Moderator Action -->
+                                <!-- Admin Action -->
                                 <div class="p-3 <?php echo $post['last_action'] ? 'bg-blue-50 border border-blue-200' : 'bg-gray-50 border border-gray-200'; ?> rounded">
                                     <?php if ($post['last_action']): ?>
-                                        <p class="text-sm"><strong>Moderator Decision:</strong> <?php echo ucfirst($post['last_action']); ?></p>
+                                        <p class="text-sm"><strong>Admin Decision:</strong> <?php echo ucfirst($post['last_action']); ?></p>
                                         <p class="text-sm"><strong>Resolved By:</strong> <?php echo htmlspecialchars($post['resolver_username'] ?? 'Unknown'); ?></p>
                                         <p class="text-sm"><strong>Resolved At:</strong> <?php echo $post['resolved_at']; ?></p>
                                         <?php if ($post['resolution_notes']): ?>
                                             <p class="text-xs mt-2"><strong>Notes:</strong> <?php echo htmlspecialchars($post['resolution_notes']); ?></p>
                                         <?php endif; ?>
                                     <?php else: ?>
-                                        <p class="text-sm text-gray-600 italic">Awaiting moderator action...</p>
+                                        <p class="text-sm text-gray-600 italic">Awaiting admin action...</p>
                                     <?php endif; ?>
                                 </div>
                             </div>
 
                             <div class="text-xs text-gray-500 italic">
-                                This is a read-only audit view. Only moderators can resolve flags.
+                                This is a read-only audit view. Only admins can resolve flags.
                             </div>
                         </div>
                     <?php endforeach; ?>

@@ -541,14 +541,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['submit_item'])) {
             
             // Display image
             if (!empty($row['image_filename'])) {
-                if (strpos($row['image_filename'], 'images/uploads/') !== false) {
-                    // Old format from posts table
-                    $imageSrc = '/' . htmlspecialchars($row['image_filename']);
-                } else {
-                    // New format from marketplace_items table
-                    $imageSrc = '/Security2/images/uploads/' . htmlspecialchars($row['image_filename']);
+                $imagePath = (string)$row['image_filename'];
+
+                // Normalize to a relative path under images/uploads
+                $imagePath = preg_replace('#^https?://[^/]+/#i', '', $imagePath);
+                $imagePath = ltrim($imagePath, '/');
+                if (strpos($imagePath, 'Security2/') === 0) {
+                    $imagePath = substr($imagePath, strlen('Security2/'));
                 }
-                echo '<div class="mb-3 overflow-hidden rounded"><img src="' . $imageSrc . '" class="w-full h-40 object-cover" alt="" /></div>';
+                if (strpos($imagePath, 'images/uploads/') !== 0) {
+                    $imagePath = 'images/uploads/' . basename($imagePath);
+                }
+
+                $imageSrc = '/Security2/' . $imagePath;
+                echo '<div class="mb-3 overflow-hidden rounded"><img src="' . htmlspecialchars($imageSrc) . '" class="w-full h-40 object-cover" alt="" /></div>';
             }
             
             echo '<h3 class="font-semibold">' . htmlspecialchars($row['title']) . '</h3>';

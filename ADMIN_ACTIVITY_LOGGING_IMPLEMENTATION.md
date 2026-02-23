@@ -1,7 +1,7 @@
 # Admin Activity Logging System - Implementation Summary
 
 ## Overview
-The admin activity logging system has been implemented to track all admin operations including page views, user management actions, and moderator deployments. All activities are logged to the `admin_activity_logs` table and stored in the `registered_users` table with merged credentials.
+The admin activity logging system has been implemented to track all super admin operations including page views, user management actions, and admin deployments. All activities are logged to the `admin_activity_logs` table and stored in the `registered_users` table with merged credentials.
 
 ## Files Modified
 
@@ -9,7 +9,7 @@ The admin activity logging system has been implemented to track all admin operat
 **Changes Made:**
 - Added `createAdminActivityLogsTable()` function to auto-create the `admin_activity_logs` table if it doesn't exist
 - Enhanced `logAdminActivity()` function with proper exception handling and PDO prepared statements
-- Added action types: `delete_moderator`, `add_moderator`, `ban_user`
+- Added action types: `delete_moderator`, `add_moderator`, `ban_user` (used for Admin role records)
 - Logs page views when admin visits the Activity Logs page
 - Fetches and displays all activity logs in a formatted HTML table with columns:
   - Admin Username
@@ -29,25 +29,25 @@ The admin activity logging system has been implemented to track all admin operat
 ### 2. **admin_deploy.php** ✅
 **Changes Made:**
 - Added logging functions (identical to admin_activity.php)
-- Logs page views when admin visits Deploy Moderators page
-- **When adding a moderator:** Logs the action with format:
+ - Logs page views when super admin visits Deploy Admins page
+ - **When adding an admin:** Logs the action with format:
   ```
-  Added moderator: FirstName LastName (Username: username, Email: email)
+  Added admin: FirstName LastName (Username: username, Email: email)
   ```
-  - Captures full moderator details from the form
-  - Records to `registered_users` table with role='moderator'
+  - Captures full admin details from the form
+  - Records to `registered_users` table with role='moderator' (Admin role)
   - Falls back to `moderators` table if schema mismatch
 
-- **When deleting a moderator:** Logs the action with format:
+- **When deleting an admin:** Logs the action with format:
   ```
-  Deleted moderator ID: FirstName LastName (ID:123, Username: username)
+  Deleted admin ID: FirstName LastName (ID:123, Username: username)
   ```
-  - Fetches moderator info before deletion
-  - Records deletion with moderator identification details
+  - Fetches admin info before deletion
+  - Records deletion with admin identification details
   - Falls back to `moderators` table if needed
 
 **Credentials Merged:**
-- Moderator credentials (first_name, middle_initial, last_name, username, email, password, role) are directly inserted into the `registered_users` table
+- Admin (moderator role) credentials (first_name, middle_initial, last_name, username, email, password, role) are directly inserted into the `registered_users` table
 - Activity log includes usernames and emails for audit trail
 - All actions are timestamped and IP-tracked
 
@@ -103,8 +103,8 @@ CREATE TABLE IF NOT EXISTS `admin_activity_logs` (
 | Action | Description | Example |
 |--------|-------------|---------|
 | view | Page views | "Viewed page: User Management Dashboard" |
-| add_moderator | Moderator creation | "Added moderator: John Doe (Username: johndoe, Email: john@example.com)" |
-| delete_moderator | Moderator deletion | "Deleted moderator ID: John Doe (ID:123, Username: johndoe)" |
+| add_moderator | Admin creation (moderator role) | "Added admin: John Doe (Username: johndoe, Email: john@example.com)" |
+| delete_moderator | Admin deletion (moderator role) | "Deleted admin ID: John Doe (ID:123, Username: johndoe)" |
 | delete_user | User account deletion | "Deleted user ID: Jane Smith (ID:456, Username: janesmith)" |
 | ban_user | User account banning | "Banned user ID: Jane Smith (ID:456, Username: janesmith)" |
 | approve_artwork | Artwork approval (reserved) | "Approved artwork ID: 789" |
@@ -121,7 +121,7 @@ When any admin page loads, the system checks if `admin_activity_logs` table exis
 ### 2. Activity Logging
 Each admin action that modifies data:
 1. Retrieves the admin's user_id from session
-2. Captures relevant details (user info, moderator info, etc.)
+2. Captures relevant details (user info, admin info, etc.)
 3. Gets the admin's IP address
 4. Inserts a record into `admin_activity_logs` with formatted activity message
 
@@ -134,24 +134,24 @@ The `admin_activity.php` page:
 
 ---
 
-## Moderator Credentials Integration
+## Admin Credentials Integration
 
-When an admin adds a moderator via `admin_deploy.php`:
+When a super admin adds an admin (moderator role) via `admin_deploy.php`:
 
 **Data Flow:**
 1. Admin fills form with: firstname, middlename, lastname, email, username, password
 2. Password hashed using `PASSWORD_DEFAULT` algorithm
 3. Record inserted into `registered_users` table with:
    - `first_name`, `middle_initial`, `last_name`, `username`, `email`, `password`, `role='moderator'`
-4. Activity logged with all moderator details (except password for security)
+4. Activity logged with all admin details (except password for security)
 5. If registered_users unavailable, falls back to `moderators` table
 6. Activity is retrievable from `admin_activity_logs` table
 
 **Logged Information:**
-- Full moderator name
+- Full admin name
 - Username
 - Email
-- Admin who created the moderator
+- Admin who created the admin
 - Exact timestamp and IP address
 
 ---

@@ -8,7 +8,7 @@ if (!isset($_SESSION['role']) || $_SESSION['role'] !== 'moderator') {
     exit();
 }
 
-$username = $_SESSION['username'] ?? 'Moderator';
+$username = $_SESSION['username'] ?? 'Admin';
 $user_id = $_SESSION['user_id'];
 
 // Ensure moderator activity logs table exists
@@ -70,12 +70,12 @@ try {
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <script src="https://cdn.tailwindcss.com"></script>
-    <title>My Activity Logs - Moderator</title>
+    <title>My Activity Logs - Admin</title>
 </head>
 <body class="bg-gray-100 min-h-screen">
     <header class="bg-gray-800 text-white p-6 flex items-center justify-between shadow-lg">
         <div>
-            <h1 class="text-2xl font-bold">ARTLAB Moderator</h1>
+            <h1 class="text-2xl font-bold">ARTLAB Admin</h1>
             <p class="text-gray-300 text-sm">Activity Logs</p>
         </div>
         <div class="flex items-center gap-4">
@@ -90,7 +90,7 @@ try {
         <main class="flex-1 p-10 bg-white">
             <div class="mb-10">
                 <h1 class="text-3xl font-semibold text-gray-800">My Activity Logs</h1>
-                <p class="text-gray-500 mt-1">View your page visits and moderation actions</p>
+                <p class="text-gray-500 mt-1">View your page visits and admin actions</p>
             </div>
 
             <div class="bg-white rounded-lg shadow-md overflow-hidden border border-gray-200">

@@ -1,11 +1,42 @@
 <?php
 session_start();
 require 'connection.php';
+include 'activity_logger.php';
 
 if (!isset($_SESSION['role']) || $_SESSION['role'] !== 'platform_admin') {
     header("Location: login.php");
     exit();
 
+}
+
+try {
+    $conn->exec("ALTER TABLE registered_users ADD COLUMN status VARCHAR(20) DEFAULT 'active'");
+} catch (Exception $e) {
+}
+
+try {
+    $conn->exec("ALTER TABLE registered_users ADD COLUMN ban_reason VARCHAR(255) NULL");
+} catch (Exception $e) {
+}
+
+try {
+    $conn->exec("ALTER TABLE registered_users ADD COLUMN status_reason VARCHAR(255) NULL");
+} catch (Exception $e) {
+}
+
+try {
+    $conn->exec("ALTER TABLE registered_users ADD COLUMN status_updated_at TIMESTAMP NULL");
+} catch (Exception $e) {
+}
+
+try {
+    $conn->exec("ALTER TABLE registered_users ADD COLUMN status VARCHAR(20) DEFAULT 'active'");
+} catch (Exception $e) {
+}
+
+try {
+    $conn->exec("ALTER TABLE registered_users ADD COLUMN ban_reason VARCHAR(255) NULL");
+} catch (Exception $e) {
 }
 
 // Include the logging function
@@ -27,8 +58,58 @@ function createAdminActivityLogsTable($conn) {
             INDEX idx_user_id (user_id),
             INDEX idx_timestamp (timestamp)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+
+        try {
+            $conn->exec("ALTER TABLE admin_activity_logs ADD COLUMN device VARCHAR(50) NULL AFTER ip_address");
+        } catch (Exception $e) {
+        }
+
+        try {
+            $conn->exec("ALTER TABLE admin_activity_logs ADD COLUMN os VARCHAR(50) NULL AFTER device");
+        } catch (Exception $e) {
+        }
+
+        try {
+            $conn->exec("ALTER TABLE admin_activity_logs ADD COLUMN time_in TIMESTAMP NULL AFTER os");
+        } catch (Exception $e) {
+        }
+
+        try {
+            $conn->exec("ALTER TABLE admin_activity_logs ADD COLUMN time_out TIMESTAMP NULL AFTER time_in");
+        } catch (Exception $e) {
+        }
+
+        try {
+            $conn->exec("ALTER TABLE admin_activity_logs ADD COLUMN timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP");
+        } catch (Exception $e) {
+        }
+
+        try {
+            $conn->exec("ALTER TABLE admin_activity_logs ADD INDEX idx_timestamp (timestamp)");
+        } catch (Exception $e) {
+        }
     } catch (Exception $e) {
         // Table might already exist with proper schema
+    }
+}
+
+// Create unban requests table if not exists
+function createUnbanRequestsTable($conn) {
+    try {
+        $conn->exec("CREATE TABLE IF NOT EXISTS unban_requests (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            user_id VARCHAR(9) NOT NULL,
+            requested_by VARCHAR(9) NOT NULL,
+            reason VARCHAR(255) NULL,
+            status VARCHAR(20) NOT NULL DEFAULT 'pending',
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            reviewed_by VARCHAR(9) NULL,
+            reviewed_at TIMESTAMP NULL,
+            INDEX idx_user_id (user_id),
+            INDEX idx_status (status)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+    } catch (Exception $e) {
+        // ignore
     }
 }
 
@@ -84,11 +165,20 @@ function logAdminActivity($conn, $actionType, $details = '', $time_in = null, $t
     $activity = match($actionType) {
         'view' => "Viewed page: $details",
         'delete_user' => "Deleted user ID: $details",
-        'delete_moderator' => "Deleted moderator ID: $details",
-        'add_moderator' => "Added moderator: $details",
+        'delete_moderator' => "Deleted admin ID: $details",
+        'add_moderator' => "Added admin: $details",
         'approve_artwork' => "Approved artwork ID: $details",
         'edit_user' => "Edited user ID: $details",
         'ban_user' => "Banned user ID: $details",
+        'unban_user' => "Unbanned user ID: $details",
+        'restore_user' => "Restored user ID: $details",
+        'enable_user' => "Enabled user ID: $details",
+        'change_role' => "Changed user role: $details",
+        'approve_unban_request' => "Approved unban request: $details",
+        'deny_unban_request' => "Denied unban request: $details",
+        'disable_admin' => "Disabled admin: $details",
+        'enable_admin' => "Enabled admin: $details",
+        'restore_admin' => "Restored admin: $details",
         'logout' => "Logged out",
         default => $details
     };
@@ -126,6 +216,7 @@ function logAdminActivity($conn, $actionType, $details = '', $time_in = null, $t
 
 // Create table if it doesn't exist
 createAdminActivityLogsTable($conn);
+createUnbanRequestsTable($conn);
 
 if (isset($_GET['delete'])) {
     $id = $_GET['delete'];
@@ -147,11 +238,12 @@ if (isset($_GET['delete'])) {
         $user_details = "ID: $id";
     }
     
-    $stmt = $conn->prepare("DELETE FROM registered_users WHERE id = ?");
-    $stmt->execute([$id]);
+    $status_reason = 'Deleted by Super Admin';
+    $stmt = $conn->prepare("UPDATE registered_users SET status='deleted', status_reason = ?, status_updated_at = NOW() WHERE id = ?");
+    $stmt->execute([$status_reason, $id]);
     
     // Log the deletion
-    logAdminActivity($conn, 'delete_user', $user_details ?? "ID: $id");
+    logAdminActivity($conn, 'delete_user', ($user_details ?? "ID: $id") . " | Page: User Management");
     
     header("Location: admin_dashboard.php");
     exit();
@@ -159,39 +251,184 @@ if (isset($_GET['delete'])) {
 
 if (isset($_GET['ban'])) {
     $id = $_GET['ban'];
+    // Debug log
+    error_log("Ban handler called with id=$id, ban_reason=" . ($_GET['ban_reason'] ?? 'NOT SET'));
+    
     if ($id == $_SESSION['user_id']) { // prevent self-ban
         header("Location: admin_dashboard.php");
         exit();
     }
+
+    $ban_reason = trim($_GET['ban_reason'] ?? '');
+    if ($ban_reason === '') {
+        $ban_reason = 'Violation of platform rules.';
+    }
+    $ban_reason = substr($ban_reason, 0, 255);
     
     // Get user info before banning for logging
     try {
-        $info_stmt = $conn->prepare("SELECT first_name, last_name, username, email FROM registered_users WHERE id = ?");
+        $info_stmt = $conn->prepare("SELECT first_name, last_name, username FROM registered_users WHERE id = ?");
         $info_stmt->execute([$id]);
         $user_info = $info_stmt->fetch(PDO::FETCH_ASSOC);
         
         if ($user_info) {
-            $user_details = $user_info['first_name'] . ' ' . $user_info['last_name'] . ' (ID:' . $id . ', Username: ' . $user_info['username'] . ')';
+            $user_details = ($user_info['first_name'] ?? '') . ' ' . ($user_info['last_name'] ?? '') . ' (ID:' . $id . ', Username: ' . $user_info['username'] . ')';
+        } else {
+            $user_details = "ID: $id";
         }
     } catch (Exception $e) {
+        error_log("Error fetching user info: " . $e->getMessage());
         $user_details = "ID: $id";
     }
     
-    $stmt = $conn->prepare("UPDATE registered_users SET status='banned' WHERE id=?");
-    $stmt->execute([$id]);
-    
-    // Log the ban
-    logAdminActivity($conn, 'ban_user', $user_details ?? "ID: $id");
+    $status_reason = 'Banned by Super Admin';
+    try {
+        $stmt = $conn->prepare("UPDATE registered_users SET status='banned', ban_reason = ?, status_reason = ?, status_updated_at = NOW() WHERE id=?");
+        $result = $stmt->execute([$ban_reason, $status_reason, $id]);
+        error_log("Ban update executed. Rows affected: " . $stmt->rowCount());
+        
+        // Log the ban
+        $log_details = ($user_details ?? "ID: $id") . " | Reason: " . $ban_reason . " | Page: User Management";
+        logAdminActivity($conn, 'ban_user', $log_details);
+    } catch (Exception $e) {
+        error_log("Ban error: " . $e->getMessage());
+        echo "<script>alert('Ban error: " . addslashes($e->getMessage()) . "');</script>";
+    }
     
     header("Location: admin_dashboard.php");
     exit();
 }
 
+if (isset($_GET['unban'])) {
+    $id = $_GET['unban'];
+    $stmt = $conn->prepare("UPDATE registered_users SET status='active', ban_reason = NULL, status_reason = NULL, status_updated_at = NOW() WHERE id=?");
+    $stmt->execute([$id]);
+    logAdminActivity($conn, 'unban_user', "ID: $id | Page: User Management");
+    header("Location: admin_dashboard.php");
+    exit();
+}
 
-header("Cache-Control: no-store, no-cache, must-revalidate, max-age=0");
+if (isset($_GET['restore'])) {
+    $id = $_GET['restore'];
+    $stmt = $conn->prepare("UPDATE registered_users SET status='active', ban_reason = NULL, status_reason = NULL, status_updated_at = NOW() WHERE id=?");
+    $stmt->execute([$id]);
+    logAdminActivity($conn, 'restore_user', "ID: $id | Page: User Management");
+    header("Location: admin_dashboard.php");
+    exit();
+}
+
+if (isset($_GET['enable'])) {
+    $id = $_GET['enable'];
+    $stmt = $conn->prepare("UPDATE registered_users SET status='active', ban_reason = NULL, status_reason = NULL, status_updated_at = NOW() WHERE id=?");
+    $stmt->execute([$id]);
+    logAdminActivity($conn, 'enable_user', "ID: $id | Page: User Management");
+    header("Location: admin_dashboard.php");
+    exit();
+}
+
+if (isset($_GET['approve_unban_request'])) {
+    $request_id = (int)$_GET['approve_unban_request'];
+    try {
+        $stmt = $conn->prepare("UPDATE unban_requests SET status = 'approved', reviewed_by = ?, reviewed_at = NOW() WHERE id = ?");
+        $stmt->execute([$_SESSION['user_id'], $request_id]);
+        logAdminActivity($conn, 'approve_unban_request', "Request ID: $request_id | Page: User Management");
+    } catch (Exception $e) {
+        // ignore
+    }
+    header("Location: admin_dashboard.php");
+    exit();
+}
+
+if (isset($_GET['deny_unban_request'])) {
+    $request_id = (int)$_GET['deny_unban_request'];
+    try {
+        $stmt = $conn->prepare("UPDATE unban_requests SET status = 'denied', reviewed_by = ?, reviewed_at = NOW() WHERE id = ?");
+        $stmt->execute([$_SESSION['user_id'], $request_id]);
+        logAdminActivity($conn, 'deny_unban_request', "Request ID: $request_id | Page: User Management");
+    } catch (Exception $e) {
+        // ignore
+    }
+    header("Location: admin_dashboard.php");
+    exit();
+}
+
+if (isset($_GET['change_role'])) {
+    $id = $_GET['change_role'];
+    $newRole = $_GET['new_role'] ?? 'artist';
+    
+    // Validate role
+    if (!in_array($newRole, ['artist', 'moderator'])) {
+        $newRole = 'artist';
+    }
+    
+    // Prevent changing own role
+    if ($id == $_SESSION['user_id']) {
+        header("Location: admin_dashboard.php");
+        exit();
+    }
+    
+    // Get user info before changing role for logging
+    try {
+        $info_stmt = $conn->prepare("SELECT first_name, last_name, username, role FROM registered_users WHERE id = ?");
+        $info_stmt->execute([$id]);
+        $user_info = $info_stmt->fetch(PDO::FETCH_ASSOC);
+        
+        if ($user_info) {
+            $oldRole = $user_info['role'] ?? 'artist';
+            $user_details = ($user_info['first_name'] ?? '') . ' ' . ($user_info['last_name'] ?? '') . ' (ID:' . $id . ', Username: ' . $user_info['username'] . ')';
+            
+            // Change role
+            try {
+                $stmt = $conn->prepare("UPDATE registered_users SET role = ? WHERE id = ?");
+                $stmt->execute([$newRole, $id]);
+                
+                // Log the role change
+                $roleLabel = $newRole === 'moderator' ? 'Admin' : 'Artist';
+                $oldRoleLabel = $oldRole === 'moderator' ? 'Admin' : 'Artist';
+                $log_details = $user_details . " | Changed from $oldRoleLabel to $roleLabel | Page: User Management";
+                logAdminActivity($conn, 'change_role', $log_details);
+            } catch (Exception $e) {
+                // ignore
+            }
+        }
+    } catch (Exception $e) {
+        // ignore
+    }
+    
+    header("Location: admin_dashboard.php");
+    exit();
+}
+
 header("Pragma: no-cache");
 
-$username = $_SESSION['username'] ?? 'platform admin';
+// Get current user's full name and role
+$user_id = $_SESSION['user_id'] ?? '';
+$user_full_name = 'Super Admin';
+$user_role = 'Super Admin';
+
+if ($user_id) {
+    try {
+        $user_stmt = $conn->prepare("SELECT first_name, last_name, role FROM registered_users WHERE id = ?");
+        $user_stmt->execute([$user_id]);
+        $user_data = $user_stmt->fetch(PDO::FETCH_ASSOC);
+        if ($user_data) {
+            $user_full_name = trim(($user_data['first_name'] ?? '') . ' ' . ($user_data['last_name'] ?? ''));
+            if (!$user_full_name) {
+                $user_full_name = 'Super Admin';
+            }
+            // Set role label based on role value
+            if ($user_data['role'] === 'platform_admin') {
+                $user_role = 'Super Admin';
+            } else {
+                $user_role = ucfirst($user_data['role'] ?? 'artist');
+            }
+        }
+    } catch (Exception $e) {
+        // Use defaults
+    }
+}
+
+$username = $_SESSION['username'] ?? 'super admin';
 $current_page = basename($_SERVER['PHP_SELF']);
 
 // Log page view
@@ -207,9 +444,11 @@ $logs = $stmt->fetchAll(PDO::FETCH_ASSOC);
 $current_admin_id = $_SESSION['user_id'];
 
 $users = $conn->prepare("
-    SELECT * 
-    FROM registered_users 
-    WHERE role != 'platform_admin' OR id != :current_id
+        SELECT * 
+        FROM registered_users 
+        WHERE (status IS NULL OR status != 'deleted')
+            AND role != 'platform_admin'
+            AND id != :current_id
 ");
 $users->bindParam(':current_id', $current_admin_id, PDO::PARAM_INT);
 $users->execute();
@@ -226,6 +465,16 @@ $users = $users->fetchAll(PDO::FETCH_ASSOC);
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://fonts.googleapis.com/css2?family=Permanent+Marker&display=swap" rel="stylesheet">
     <title>Welcome to Artlab</title>
+
+    <script>
+    function doBan(userId, username) {
+        var reason = prompt('Enter ban reason for ' + username + ':');
+        if (reason === null) return false;
+        var finalReason = reason.trim().length > 0 ? reason.trim() : 'Violation of platform rules.';
+        window.location.href = '?ban=' + userId + '&ban_reason=' + encodeURIComponent(finalReason);
+        return false;
+    }
+    </script>
 
     <style>
         body {
@@ -345,16 +594,16 @@ $users = $users->fetchAll(PDO::FETCH_ASSOC);
 <!-- 🔥 SIDEBAR -->
 <aside class="w-64 bg-gray-800 min-h-screen p-6 flex flex-col">
 
-    <h2 class="text-2xl font-bold text-white mb-5">ARTLAB ADMIN</h2>
+    <h2 class="text-2xl font-bold text-white mb-5">ARTLAB SUPERADMIN</h2>
 
     <div class="flex flex-col items-center text-center mt-8">
         <img src="/Security2/images/profilepic.jpg"
              class="w-24 h-24 rounded-full border-4 border-yellow-500 mb-4">
          <h4 class="text-white font-semibold">
-            <?php echo htmlspecialchars($username); ?>
+            <?php echo htmlspecialchars($user_full_name); ?>
         </h4>
         <p class="text-gray-400 text-sm">
-            Platform Admin
+            <?php echo htmlspecialchars($user_role); ?>
         </p>
     </div>
 
@@ -363,7 +612,7 @@ $users = $users->fetchAll(PDO::FETCH_ASSOC);
 
         <a href="admin_dashboard.php" class="sidebar-link <?php echo $current_page === 'admin_dashboard.php' ? 'bg-yellow-700' : 'bg-gray-700'; ?> text-white rounded-lg px-4 py-3">User Management</a>
         <a href="admin_flag_review.php" class="sidebar-link <?php echo $current_page === 'admin_flag_review.php' ? 'bg-yellow-700' : 'bg-gray-700'; ?> text-white rounded-lg px-4 py-3">Flag Audit</a>
-        <a href="admin_deploy.php" class="sidebar-link <?php echo $current_page === 'admin_deploy.php' ? 'bg-yellow-700' : 'bg-gray-700'; ?> text-white rounded-lg px-4 py-3">Deploy Moderators</a>
+        <a href="admin_deploy.php" class="sidebar-link <?php echo $current_page === 'admin_deploy.php' ? 'bg-yellow-700' : 'bg-gray-700'; ?> text-white rounded-lg px-4 py-3">Deploy Admins</a>
         <a href="admin_marketplace.php" class="sidebar-link <?php echo $current_page === 'admin_marketplace.php' ? 'bg-yellow-700' : 'bg-gray-700'; ?> text-white rounded-lg px-4 py-3">Marketplace Art </a>
         <a href="admin_collab.php" class="sidebar-link <?php echo $current_page === 'admin_collab.php' ? 'bg-yellow-700' : 'bg-gray-700'; ?> text-white rounded-lg px-4 py-3">Collaboration Oversight</a>
         <a href="admin_activity.php" class="sidebar-link <?php echo $current_page === 'admin_activity.php' ? 'bg-yellow-700' : 'bg-gray-700'; ?> text-white rounded-lg px-4 py-3">Activity Logs</a>
@@ -376,7 +625,7 @@ $users = $users->fetchAll(PDO::FETCH_ASSOC);
 
         <header class="bg-gray-800 text-white rounded-xl p-6 mb-6 flex justify-between">
             <h3 class="text-xl font-bold">
-                Platform Admin Panel
+                Super Admin Panel
             </h3>
 
             <a href="logout.php"
@@ -399,6 +648,7 @@ $users = $users->fetchAll(PDO::FETCH_ASSOC);
             <th class="p-3">Role</th>
             <th class="p-3">Status</th>
             <th class="p-3">Actions</th>
+            <th class="p-3">Role Mgmt</th>
             <th class="p-3">Logs</th>
             </tr>
             </thead>
@@ -419,11 +669,42 @@ $users = $users->fetchAll(PDO::FETCH_ASSOC);
             Delete
             </a>
 
-            <a href="?ban=<?= $user['id'] ?>"
-            class="bg-yellow-500 text-white px-3 py-1 rounded">
-            Ban
-            </a>
+            <?php if (($user['status'] ?? 'active') === 'banned'): ?>
+                <a href="?unban=<?= $user['id'] ?>"
+                class="bg-green-600 text-white px-3 py-1 rounded"
+                onclick="return confirm('Unban this user?')">
+                Unban
+                </a>
+            <?php elseif (($user['status'] ?? 'active') === 'disabled'): ?>
+                <a href="?enable=<?= $user['id'] ?>"
+                class="bg-green-600 text-white px-3 py-1 rounded"
+                onclick="return confirm('Enable this user?')">
+                Enable
+                </a>
+            <?php else: ?>
+                <a href="#"
+                class="bg-yellow-500 text-white px-3 py-1 rounded"
+                onclick="return doBan('<?= htmlspecialchars($user['id'], ENT_QUOTES) ?>', '<?= htmlspecialchars($user['username'], ENT_QUOTES) ?>')">
+                Ban
+                </a>
+            <?php endif; ?>
 
+            </td>
+
+            <td class="p-3 space-x-1">
+                <?php if (($user['role'] ?? 'artist') === 'moderator'): ?>
+                    <a href="?change_role=<?= htmlspecialchars($user['id'], ENT_QUOTES) ?>&new_role=artist"
+                    class="bg-purple-600 text-white px-2 py-1 rounded text-sm"
+                    onclick="return confirm('Remove Admin status? User will become Artist.')">
+                    Remove Admin
+                    </a>
+                <?php else: ?>
+                    <a href="?change_role=<?= htmlspecialchars($user['id'], ENT_QUOTES) ?>&new_role=moderator"
+                    class="bg-blue-600 text-white px-2 py-1 rounded text-sm"
+                    onclick="return confirm('Make this user an Admin?')">
+                    Make Admin
+                    </a>
+                <?php endif; ?>
             </td>
 
             <td class="p-3">
@@ -438,6 +719,101 @@ $users = $users->fetchAll(PDO::FETCH_ASSOC);
             <?php endforeach; ?>
             </tbody>
             </table>
+
+            <section class="bg-gray-50 rounded-xl shadow-inner p-5 mt-6">
+                <h3 class="text-lg font-semibold mb-4">User Action History (Ban/Delete/Disable)</h3>
+                <?php
+                $history_stmt = $conn->prepare("\n                    SELECT id, username, role, status, ban_reason, status_reason, status_updated_at\n                    FROM registered_users\n                    WHERE status IN ('banned', 'deleted', 'disabled')\n                      AND role != 'platform_admin'\n                    ORDER BY status_updated_at DESC\n                    LIMIT 50\n                ");
+                $history_stmt->execute();
+                $history_rows = $history_stmt->fetchAll(PDO::FETCH_ASSOC);
+                ?>
+                <?php if (!empty($history_rows)): ?>
+                    <table class="w-full border-collapse text-sm">
+                        <thead class="bg-gray-800 text-white">
+                            <tr>
+                                <th class="p-3 text-left">ID</th>
+                                <th class="p-3 text-left">Username</th>
+                                <th class="p-3 text-left">Role</th>
+                                <th class="p-3 text-left">Status</th>
+                                <th class="p-3 text-left">Reason</th>
+                                <th class="p-3 text-left">Updated</th>
+                                <th class="p-3 text-left">Undo</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <?php foreach ($history_rows as $row): ?>
+                                <tr class="border-b">
+                                    <td class="p-3"><?= htmlspecialchars($row['id']) ?></td>
+                                    <td class="p-3"><?= htmlspecialchars($row['username'] ?? '') ?></td>
+                                    <td class="p-3"><?= htmlspecialchars($row['role'] ?? '') ?></td>
+                                    <td class="p-3"><?= htmlspecialchars($row['status'] ?? '') ?></td>
+                                    <td class="p-3"><?= htmlspecialchars($row['ban_reason'] ?? $row['status_reason'] ?? '') ?></td>
+                                    <td class="p-3"><?= htmlspecialchars($row['status_updated_at'] ?? '') ?></td>
+                                    <td class="p-3">
+                                        <?php if ($row['status'] === 'banned'): ?>
+                                            <a class="bg-green-600 text-white px-3 py-1 rounded" href="?unban=<?= $row['id'] ?>">Unban</a>
+                                        <?php elseif ($row['status'] === 'disabled'): ?>
+                                            <a class="bg-green-600 text-white px-3 py-1 rounded" href="?enable=<?= $row['id'] ?>">Enable</a>
+                                        <?php elseif ($row['status'] === 'deleted'): ?>
+                                            <a class="bg-blue-600 text-white px-3 py-1 rounded" href="?restore=<?= $row['id'] ?>">Restore</a>
+                                        <?php endif; ?>
+                                    </td>
+                                </tr>
+                            <?php endforeach; ?>
+                        </tbody>
+                    </table>
+                <?php else: ?>
+                    <p class="text-gray-500">No recent ban/disable/delete actions found.</p>
+                <?php endif; ?>
+            </section>
+
+            <section class="bg-gray-50 rounded-xl shadow-inner p-5 mt-6">
+                <h3 class="text-lg font-semibold mb-4">Unban Requests (Pending Approval)</h3>
+                <?php
+                $requests_stmt = $conn->prepare("\n                    SELECT ur.id, ur.user_id, ur.reason, ur.created_at,
+                           u.username AS user_username,
+                           u.first_name AS user_first_name,
+                           u.last_name AS user_last_name,
+                           req.username AS requester_username
+                    FROM unban_requests ur
+                    JOIN registered_users u ON u.id = ur.user_id
+                    LEFT JOIN registered_users req ON req.id = ur.requested_by
+                    WHERE ur.status = 'pending'
+                    ORDER BY ur.created_at DESC
+                ");
+                $requests_stmt->execute();
+                $requests_rows = $requests_stmt->fetchAll(PDO::FETCH_ASSOC);
+                ?>
+                <?php if (!empty($requests_rows)): ?>
+                    <table class="w-full border-collapse text-sm">
+                        <thead class="bg-gray-800 text-white">
+                            <tr>
+                                <th class="p-3 text-left">User</th>
+                                <th class="p-3 text-left">Requested By</th>
+                                <th class="p-3 text-left">Reason</th>
+                                <th class="p-3 text-left">Requested At</th>
+                                <th class="p-3 text-left">Action</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <?php foreach ($requests_rows as $row): ?>
+                                <tr class="border-b">
+                                    <td class="p-3"><?php echo htmlspecialchars(trim(($row['user_first_name'] ?? '') . ' ' . ($row['user_last_name'] ?? '')) ?: ($row['user_username'] ?? $row['user_id'])); ?></td>
+                                    <td class="p-3"><?php echo htmlspecialchars($row['requester_username'] ?? 'Admin'); ?></td>
+                                    <td class="p-3"><?php echo htmlspecialchars($row['reason'] ?? ''); ?></td>
+                                    <td class="p-3"><?php echo htmlspecialchars($row['created_at'] ?? ''); ?></td>
+                                    <td class="p-3 space-x-2">
+                                        <a class="bg-green-600 text-white px-3 py-1 rounded" href="?approve_unban_request=<?php echo (int)$row['id']; ?>">Approve</a>
+                                        <a class="bg-red-600 text-white px-3 py-1 rounded" href="?deny_unban_request=<?php echo (int)$row['id']; ?>">Deny</a>
+                                    </td>
+                                </tr>
+                            <?php endforeach; ?>
+                        </tbody>
+                    </table>
+                <?php else: ?>
+                    <p class="text-gray-500">No pending unban requests.</p>
+                <?php endif; ?>
+            </section>
             
             <section id="userlogs" class="hidden bg-white rounded-xl shadow-lg w-full max-w-5xl p-6 mx-auto mb-10">
                 <?php 
