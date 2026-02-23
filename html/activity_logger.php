@@ -70,6 +70,136 @@ function getIPAddress() {
 }
 
 /**
+ * Ensure moderator_activity_logs table matches current schema expectations.
+ * Handles legacy schemas (INT user_id, FK to moderators, created_at column name).
+ *
+ * @param PDO $conn
+ * @return void
+ */
+function ensureModeratorActivityLogsSchema($conn) {
+    try {
+        $conn->exec("CREATE TABLE IF NOT EXISTS moderator_activity_logs (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            user_id VARCHAR(9) NOT NULL,
+            activity VARCHAR(500) NOT NULL,
+            ip_address VARCHAR(15) NULL,
+            device VARCHAR(50) NULL,
+            os VARCHAR(50) NULL,
+            time_in TIMESTAMP NULL,
+            time_out TIMESTAMP NULL,
+            timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            INDEX idx_user_id (user_id),
+            INDEX idx_timestamp (timestamp)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+
+        $fkStmt = $conn->query("SELECT CONSTRAINT_NAME
+            FROM information_schema.KEY_COLUMN_USAGE
+            WHERE TABLE_SCHEMA = DATABASE()
+              AND TABLE_NAME = 'moderator_activity_logs'
+              AND REFERENCED_TABLE_NAME IS NOT NULL");
+        $foreignKeys = $fkStmt ? $fkStmt->fetchAll(PDO::FETCH_COLUMN) : [];
+        foreach ($foreignKeys as $fkName) {
+            try {
+                $conn->exec("ALTER TABLE moderator_activity_logs DROP FOREIGN KEY `" . str_replace('`', '', $fkName) . "`");
+            } catch (Exception $e) {
+            }
+        }
+
+        try {
+            $conn->exec("ALTER TABLE moderator_activity_logs MODIFY user_id VARCHAR(9) NOT NULL");
+        } catch (Exception $e) {
+        }
+
+        $hasTimestampStmt = $conn->query("SELECT COUNT(*) FROM information_schema.COLUMNS
+            WHERE TABLE_SCHEMA = DATABASE()
+              AND TABLE_NAME = 'moderator_activity_logs'
+              AND COLUMN_NAME = 'timestamp'");
+        $hasTimestamp = $hasTimestampStmt ? (int)$hasTimestampStmt->fetchColumn() > 0 : false;
+
+        if (!$hasTimestamp) {
+            $hasCreatedAtStmt = $conn->query("SELECT COUNT(*) FROM information_schema.COLUMNS
+                WHERE TABLE_SCHEMA = DATABASE()
+                  AND TABLE_NAME = 'moderator_activity_logs'
+                  AND COLUMN_NAME = 'created_at'");
+            $hasCreatedAt = $hasCreatedAtStmt ? (int)$hasCreatedAtStmt->fetchColumn() > 0 : false;
+
+            if ($hasCreatedAt) {
+                try {
+                    $conn->exec("ALTER TABLE moderator_activity_logs CHANGE created_at timestamp TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP");
+                } catch (Exception $e) {
+                    try {
+                        $conn->exec("ALTER TABLE moderator_activity_logs ADD COLUMN timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP");
+                    } catch (Exception $e2) {
+                    }
+                }
+            } else {
+                try {
+                    $conn->exec("ALTER TABLE moderator_activity_logs ADD COLUMN timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP");
+                } catch (Exception $e) {
+                }
+            }
+        }
+
+        try {
+            $conn->exec("ALTER TABLE moderator_activity_logs ADD INDEX idx_timestamp (timestamp)");
+        } catch (Exception $e) {
+        }
+    } catch (Exception $e) {
+    }
+}
+
+/**
+ * Ensure user_activity_logs table matches current schema expectations.
+ * Handles legacy schemas (INT user_id, missing device/time columns).
+ *
+ * @param PDO $conn
+ * @return void
+ */
+function ensureUserActivityLogsSchema($conn) {
+    try {
+        $conn->exec("CREATE TABLE IF NOT EXISTS user_activity_logs (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            user_id VARCHAR(9) NOT NULL,
+            activity VARCHAR(500) NOT NULL,
+            ip_address VARCHAR(15) NULL,
+            device VARCHAR(50) NULL,
+            os VARCHAR(50) NULL,
+            time_in TIMESTAMP NULL,
+            time_out TIMESTAMP NULL,
+            timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            INDEX idx_user_id (user_id),
+            INDEX idx_timestamp (timestamp)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+
+        try {
+            $conn->exec("ALTER TABLE user_activity_logs MODIFY user_id VARCHAR(9) NOT NULL");
+        } catch (Exception $e) {
+        }
+
+        try {
+            $conn->exec("ALTER TABLE user_activity_logs ADD COLUMN device VARCHAR(50) NULL AFTER ip_address");
+        } catch (Exception $e) {
+        }
+
+        try {
+            $conn->exec("ALTER TABLE user_activity_logs ADD COLUMN time_in TIMESTAMP NULL AFTER os");
+        } catch (Exception $e) {
+        }
+
+        try {
+            $conn->exec("ALTER TABLE user_activity_logs ADD COLUMN time_out TIMESTAMP NULL AFTER time_in");
+        } catch (Exception $e) {
+        }
+
+        try {
+            $conn->exec("ALTER TABLE user_activity_logs ADD INDEX idx_timestamp (timestamp)");
+        } catch (Exception $e) {
+        }
+    } catch (Exception $e) {
+    }
+}
+
+/**
  * Log an activity with device and time tracking
  * 
  * @param PDO $conn Database connection object
@@ -82,6 +212,27 @@ function getIPAddress() {
  */
 function logActivity($conn, $user_id, $activity, $table_name = 'admin_activity_logs', $time_in = null, $time_out = null) {
     try {
+        if ($table_name === 'moderator_activity_logs') {
+            ensureModeratorActivityLogsSchema($conn);
+        }
+        if ($table_name === 'user_activity_logs') {
+            ensureUserActivityLogsSchema($conn);
+        }
+
+        if ($time_in === null && isset($_SESSION['login_log_id'])) {
+            try {
+                $loginStmt = $conn->prepare("SELECT login_time FROM login_logs WHERE login_id = :login_id");
+                $loginStmt->bindParam(':login_id', $_SESSION['login_log_id'], PDO::PARAM_INT);
+                $loginStmt->execute();
+                $loginRow = $loginStmt->fetch(PDO::FETCH_ASSOC);
+                if ($loginRow && !empty($loginRow['login_time'])) {
+                    $time_in = $loginRow['login_time'];
+                }
+            } catch (Exception $e) {
+                // Keep $time_in as null if lookup fails
+            }
+        }
+
         $ip_address = getIPAddress();
         $device = detectDevice();
         $os = detectOS();

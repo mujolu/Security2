@@ -1,6 +1,7 @@
 <?php
 session_start();
 require 'connection.php';
+include 'activity_logger.php';
 
 if (!isset($_SESSION['user_id'])) {
     header('Location: login.php');
@@ -10,20 +11,47 @@ if (!isset($_SESSION['user_id'])) {
 $username = $_SESSION['username'] ?? 'User';
 $user_id = $_SESSION['user_id'];
 
-// Fetch user's login logs from login_logs table
+$time_in = null;
+if (isset($_SESSION['login_log_id'])) {
+    try {
+        $login_stmt = $conn->prepare("SELECT login_time FROM login_logs WHERE login_id = ?");
+        $login_stmt->execute([$_SESSION['login_log_id']]);
+        $login_result = $login_stmt->fetch(PDO::FETCH_ASSOC);
+        if ($login_result) {
+            $time_in = $login_result['login_time'];
+        }
+    } catch (Exception $e) {
+        // Continue without time_in
+    }
+}
+
+// Log page visit in user_activity_logs
+logActivity($conn, $user_id, 'Accessed Artist Activity Logs Page', 'user_activity_logs', $time_in, null);
+
+// Fetch user's activity logs from user_activity_logs
 try {
     $stmt = $conn->prepare("
-        SELECT ip_address, device, os, username, login_time, logout_time 
-        FROM login_logs 
-        WHERE user_id = :user_id 
-        ORDER BY login_time DESC 
+        SELECT 
+            ual.activity,
+            ual.ip_address,
+            ual.device,
+            ual.os,
+            ual.time_in,
+            COALESCE(ual.time_out, ll.logout_time) AS session_end,
+            ual.timestamp
+        FROM user_activity_logs ual
+        LEFT JOIN login_logs ll
+            ON ll.user_id = ual.user_id
+           AND ll.login_time = ual.time_in
+        WHERE ual.user_id = :user_id
+        ORDER BY ual.timestamp DESC 
         LIMIT 100
     ");
     $stmt->bindParam(':user_id', $user_id, PDO::PARAM_STR);
     $stmt->execute();
-    $logs = $stmt->fetchAll(PDO::FETCH_ASSOC);
+    $activity_logs = $stmt->fetchAll(PDO::FETCH_ASSOC);
 } catch (PDOException $e) {
-    $logs = [];
+    $activity_logs = [];
 }
 ?>
 
@@ -67,56 +95,51 @@ try {
         <main class="flex-1 p-10 bg-gray-100 min-h-screen">
             <div class="mb-10">
                 <h1 class="text-3xl font-semibold text-gray-800">My Activity Logs</h1>
-                <p class="text-gray-500 mt-1">View your login history and session information</p>
+                <p class="text-gray-500 mt-1">View your in-app activity history</p>
             </div>
 
-            <div class="bg-white rounded-lg shadow-md overflow-hidden">
-                <?php if (!empty($logs)): ?>
+            <div class="bg-white rounded-lg shadow-md overflow-hidden mb-8">
+                <div class="px-6 py-4 bg-gray-800 text-white font-semibold">Artist Activity (Pages & Actions)</div>
+                <?php if (!empty($activity_logs)): ?>
                     <table class="w-full">
-                        <thead class="bg-gray-800 text-white">
+                        <thead class="bg-gray-100 text-gray-800">
                             <tr>
+                                <th class="px-6 py-4 text-left font-semibold">Activity</th>
                                 <th class="px-6 py-4 text-left font-semibold">Device</th>
                                 <th class="px-6 py-4 text-left font-semibold">OS</th>
                                 <th class="px-6 py-4 text-left font-semibold">IP Address</th>
-                                <th class="px-6 py-4 text-left font-semibold">Login Time</th>
-                                <th class="px-6 py-4 text-left font-semibold">Logout Time</th>
+                                <th class="px-6 py-4 text-left font-semibold">Session Start</th>
+                                <th class="px-6 py-4 text-left font-semibold">Session End</th>
+                                <th class="px-6 py-4 text-left font-semibold">Recorded At</th>
                             </tr>
                         </thead>
                         <tbody class="divide-y">
-                            <?php foreach ($logs as $log): ?>
+                            <?php foreach ($activity_logs as $log): ?>
                                 <tr class="hover:bg-gray-50 transition">
-                                    <td class="px-6 py-4 text-gray-800">
-                                        <span class="inline-block px-3 py-1 bg-blue-100 text-blue-800 rounded-full text-sm">
-                                            <?php echo htmlspecialchars($log['device'] ?? 'Unknown'); ?>
-                                        </span>
-                                    </td>
-                                    <td class="px-6 py-4 text-gray-600 text-sm">
-                                        <?php echo htmlspecialchars($log['os'] ?? 'Unknown'); ?>
-                                    </td>
-                                    <td class="px-6 py-4 text-gray-600 font-mono text-sm">
-                                        <?php echo htmlspecialchars($log['ip_address'] ?? 'N/A'); ?>
-                                    </td>
-                                    <td class="px-6 py-4 text-gray-600 text-sm">
-                                        <?php echo htmlspecialchars($log['login_time']); ?>
-                                    </td>
+                                    <td class="px-6 py-4 text-gray-800 text-sm font-medium"><?php echo htmlspecialchars($log['activity'] ?? 'N/A'); ?></td>
+                                    <td class="px-6 py-4 text-gray-800 text-sm"><?php echo htmlspecialchars($log['device'] ?? 'Unknown'); ?></td>
+                                    <td class="px-6 py-4 text-gray-600 text-sm"><?php echo htmlspecialchars($log['os'] ?? 'Unknown'); ?></td>
+                                    <td class="px-6 py-4 text-gray-600 font-mono text-sm"><?php echo htmlspecialchars($log['ip_address'] ?? 'N/A'); ?></td>
+                                    <td class="px-6 py-4 text-gray-600 text-sm"><?php echo htmlspecialchars($log['time_in'] ?? 'N/A'); ?></td>
                                     <td class="px-6 py-4 text-sm">
-                                        <?php if (!empty($log['logout_time'])): ?>
-                                            <span class="text-gray-600"><?php echo htmlspecialchars($log['logout_time']); ?></span>
+                                        <?php if (!empty($log['session_end'])): ?>
+                                            <span class="text-gray-600"><?php echo htmlspecialchars($log['session_end']); ?></span>
                                         <?php else: ?>
-                                            <span class="text-green-600 font-semibold">Currently logged in</span>
+                                            <span class="text-green-600 font-semibold">Active</span>
                                         <?php endif; ?>
                                     </td>
+                                    <td class="px-6 py-4 text-gray-600 text-sm"><?php echo htmlspecialchars($log['timestamp'] ?? 'N/A'); ?></td>
                                 </tr>
                             <?php endforeach; ?>
                         </tbody>
                     </table>
                     <div class="px-6 py-4 bg-gray-50 text-gray-600 text-sm">
-                        Showing <?php echo count($logs); ?> recent login sessions (up to 100)
+                        Showing <?php echo count($activity_logs); ?> recent activities (up to 100)
                     </div>
                 <?php else: ?>
                     <div class="p-8 text-center text-gray-500">
-                        <p class="text-lg">No login activity found</p>
-                        <p class="text-sm">Your login sessions will be recorded here</p>
+                        <p class="text-lg">No artist activity found</p>
+                        <p class="text-sm">Your page visits and actions will be recorded here</p>
                     </div>
                 <?php endif; ?>
             </div>

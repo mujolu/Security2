@@ -32,7 +32,7 @@ try {
 }
 
 // Log page view
-logPageView($conn, $user_id, 'Flag Review Dashboard', 'moderator_activity_logs');
+logActivity($conn, $user_id, 'Accessed Flag Review Dashboard', 'moderator_activity_logs');
 
 $mysqli = new mysqli("localhost","root","","artlab_db");
 if ($mysqli->connect_error) {
@@ -121,9 +121,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['resolve_post_id'])) {
             $update->close();
         }
         
-        // Log moderator action
-        $activity_msg = "Moderator action on post $post_id: $action" . ($notes ? " - Notes: " . substr($notes, 0, 100) : '');
-        logPageView($conn, $user_id, $activity_msg, 'moderator_activity_logs');
+        // Log moderator action with detailed information
+        $activity_msg = "Flag Resolution: Post #$post_id - Action: $action" . ($notes ? " - Notes: " . substr($notes, 0, 100) : '');
+        logActivity($conn, $user_id, $activity_msg, 'moderator_activity_logs');
     }
     
     header('Location: moderator_flag_review.php');
@@ -158,6 +158,9 @@ if ($result) {
     }
     $result->close();
 }
+
+// Log viewing of the reported posts list
+logActivity($conn, $user_id, 'Viewed reported posts list (' . count($flagged_posts) . ' posts)', 'moderator_activity_logs');
 
 // Get stats
 $stats_query = "SELECT 
@@ -202,15 +205,7 @@ $stats = [
 </header>
 
 <div class="flex">
-    <aside class="w-64 bg-gray-800 min-h-screen p-6 flex flex-col">
-        <h2 class="text-2xl font-bold text-white mb-5">MODERATOR</h2>
-        
-        <nav class="flex flex-col gap-4 mt-8">
-            <a href="moderator_dashboard.php" class="sidebar-link bg-gray-700 text-white rounded-lg px-4 py-3 font-medium hover:bg-yellow-700 transition-colors duration-300">Dashboard</a>
-            <a href="moderator_flag_review.php" class="sidebar-link bg-yellow-700 text-white rounded-lg px-4 py-3 font-medium hover:bg-yellow-600 transition-colors duration-300">Flag Review</a>
-            <a href="moderator_activity_logs.php" class="sidebar-link bg-gray-700 text-white rounded-lg px-4 py-3 font-medium hover:bg-yellow-700 transition-colors duration-300">Activity Logs</a>
-        </nav>
-    </aside>
+    <?php include 'moderator_sidebar.php'; ?>
 
     <main class="flex-1 p-10 bg-gray-100 min-h-screen">
         <div class="mb-8">

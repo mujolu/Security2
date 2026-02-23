@@ -35,24 +35,34 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['step1_submit'])) {
             $_SESSION['recovery_step'] = 2;
             unset($_SESSION['otp_verified']);
 
-            // Determine if account has security questions set (check columns and values)
+            // Determine if account has security questions set in user_security_settings
             $hasSecurity = false;
             try {
-                $cols = [];
-                $colStmt = $conn->query("SHOW COLUMNS FROM registered_users");
-                $allCols = $colStmt->fetchAll(PDO::FETCH_COLUMN);
-                $needed = ['security_q1','security_a1','security_q2','security_a2','security_q3','security_a3'];
-                $missing = array_diff($needed, $allCols);
-                if (empty($missing)) {
-                    // fetch the user's security fields
-                    $sqStmt = $conn->prepare("SELECT security_q1,security_a1,security_q2,security_a2,security_q3,security_a3 FROM registered_users WHERE id = :id LIMIT 1");
-                    $sqStmt->execute([':id' => $user['id']]);
-                    $sq = $sqStmt->fetch(PDO::FETCH_ASSOC);
-                    // consider set if at least one answer exists
-                    if ($sq && (!empty($sq['security_a1']) || !empty($sq['security_a2']) || !empty($sq['security_a3']))) {
-                        $hasSecurity = true;
-                        $_SESSION['security_questions'] = $sq; // store questions and answers (answers used server-side only)
+                $conn->exec("CREATE TABLE IF NOT EXISTS user_security_settings (
+                    user_id VARCHAR(9) NOT NULL,
+                    question_number TINYINT NOT NULL,
+                    security_question VARCHAR(255) NOT NULL,
+                    security_answer VARCHAR(255) NOT NULL,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                    PRIMARY KEY (user_id, question_number)
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+
+                $sqStmt = $conn->prepare("SELECT question_number, security_question, security_answer FROM user_security_settings WHERE user_id = :id ORDER BY question_number ASC");
+                $sqStmt->execute([':id' => $user['id']]);
+                $rows = $sqStmt->fetchAll(PDO::FETCH_ASSOC);
+
+                if (!empty($rows) && count($rows) >= 3) {
+                    $hasSecurity = true;
+                    $sq = [];
+                    foreach ($rows as $row) {
+                        $index = (int)$row['question_number'];
+                        $sq[$index] = [
+                            'security_question' => $row['security_question'],
+                            'security_answer' => $row['security_answer']
+                        ];
                     }
+                    $_SESSION['security_questions'] = $sq;
                 }
             } catch (Exception $e) {
                 // ignore; treat as no security questions
@@ -215,8 +225,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['step3_submit'])) {
         for ($i = 1; $i <= 3; $i++) {
             $field = 'answer' . $i;
             $submitted = isset($_POST[$field]) ? trim($_POST[$field]) : '';
-            $correct = isset($sq['security_a' . $i]) ? $sq['security_a' . $i] : '';
-            if ($submitted !== '' && strcasecmp($submitted, $correct) === 0) {
+            $correct = isset($sq[$i]['security_answer']) ? $sq[$i]['security_answer'] : '';
+            $matched = false;
+
+            if ($submitted !== '' && $correct !== '') {
+                // Preferred: hashed answers
+                $matched = password_verify($submitted, $correct);
+
+                // Backward compatibility for old plain-text answers
+                if (!$matched) {
+                    $matched = strcasecmp($submitted, $correct) === 0;
+                }
+            }
+
+            if ($matched) {
                 $answers_correct++;
             }
         }
@@ -599,38 +621,17 @@ if (isset($_POST['back_step'])) {
         <form method="POST">
             <p style="margin-bottom: 20px; color: #666; text-align: center;">Answer at least 2 out of 3 security questions correctly</p>
 
-            <div class="question-group">
-                <p><strong>Question 1:</strong> What is your favorite color?</p>
-                <label for="answer1">Choose an answer:</label>
-                <select id="answer1" name="answer1" required>
-                    <option value="">-- Select an answer --</option>
-                    <option value="red">Red</option>
-                    <option value="blue">Blue</option>
-                    <option value="green">Green</option>
-                </select>
-            </div>
-
-            <div class="question-group">
-                <p><strong>Question 2:</strong> What is the capital of France?</p>
-                <label for="answer2">Choose an answer:</label>
-                <select id="answer2" name="answer2" required>
-                    <option value="">-- Select an answer --</option>
-                    <option value="london">London</option>
-                    <option value="paris">Paris</option>
-                    <option value="berlin">Berlin</option>
-                </select>
-            </div>
-
-            <div class="question-group">
-                <p><strong>Question 3:</strong> What is your favorite food?</p>
-                <label for="answer3">Choose an answer:</label>
-                <select id="answer3" name="answer3" required>
-                    <option value="">-- Select an answer --</option>
-                    <option value="pizza">Pizza</option>
-                    <option value="salad">Salad</option>
-                    <option value="sushi">Sushi</option>
-                </select>
-            </div>
+            <?php
+                $recoveryQuestions = $_SESSION['security_questions'] ?? [];
+                for ($i = 1; $i <= 3; $i++):
+                    $questionText = $recoveryQuestions[$i]['security_question'] ?? "Security Question $i";
+            ?>
+                <div class="question-group">
+                    <p><strong>Question <?= $i ?>:</strong> <?= htmlspecialchars($questionText) ?></p>
+                    <label for="answer<?= $i ?>">Your answer:</label>
+                    <input type="text" id="answer<?= $i ?>" name="answer<?= $i ?>" placeholder="Enter your answer" required>
+                </div>
+            <?php endfor; ?>
 
             <div class="button-group">
                 <button type="submit" name="back_step" class="btn-back">Back</button>

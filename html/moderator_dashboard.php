@@ -21,7 +21,6 @@ function createModeratorActivityLogsTable($conn) {
             time_in TIMESTAMP NULL,
             time_out TIMESTAMP NULL,
             timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            FOREIGN KEY (user_id) REFERENCES moderators(id) ON DELETE CASCADE,
             INDEX idx_user_id (user_id),
             INDEX idx_timestamp (timestamp)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
@@ -100,8 +99,8 @@ function logModeratorActivity($conn, $actionType, $details = '', $time_in = null
 // Create table if it doesn't exist
 createModeratorActivityLogsTable($conn);
 
-// Log page view
-logModeratorActivity($conn, 'view', 'Moderator Dashboard');
+// Log page view using the standard logging function
+logActivity($conn, $_SESSION['user_id'], 'Accessed Moderator Dashboard', 'moderator_activity_logs');
 
 $username = $_SESSION['username'] ?? 'moderator';
 ?>
@@ -144,21 +143,7 @@ try {
     <div class="layout flex w-full min-h-screen">
 
         <!-- SIDEBAR -->
-        <aside class="w-64 bg-gray-800 min-h-screen p-6 flex flex-col">
-            <h2 class="text-2xl font-bold text-white mb-5">ARTLAB MOD</h2>
-
-            <div class="flex flex-col items-center text-center mt-8">
-                <img src="/Security2/images/profilepic.jpg" class="w-24 h-24 rounded-full border-4 border-yellow-500 mb-4">
-                <h4 class="text-white font-semibold"><?php echo htmlspecialchars($username); ?></h4>
-                <p class="text-gray-400 text-sm">Moderator</p>
-            </div>
-
-            <nav class="flex flex-col gap-4 mt-8">
-                <a href="moderator_dashboard.php" class="sidebar-link bg-yellow-700 text-white rounded-lg px-4 py-3">User Management</a>
-                <a href="moderator_flag_review.php" class="sidebar-link bg-gray-700 text-white rounded-lg px-4 py-3">Flag Review</a>
-                <a href="moderator_activity_logs.php" class="sidebar-link bg-gray-700 text-white rounded-lg px-4 py-3">My Activity Logs</a>
-            </nav>
-        </aside>
+        <?php include 'moderator_sidebar.php'; ?>
 
         <!-- MAIN -->
         <main class="flex-1 p-6">
