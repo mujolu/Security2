@@ -340,7 +340,7 @@ OAUTH2_CONFIGURED: <strong><?php echo (!empty(EMAIL_CONFIG['google_client_id']) 
                     <p style="margin-top: 10px;"><strong>Test the flow:</strong></p>
                     <ol style="margin: 10px 0 0 20px;">
                         <li>Go to password reset page</li>
-                        <li>Enter your registered email</li>
+                        <li>Enter your username</li>
                         <li>Check your email for OTP</li>
                         <li>Verify OTP on the platform</li>
                     </ol>

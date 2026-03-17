@@ -11,6 +11,29 @@ use PHPMailer\PHPMailer\PHPMailer;
 class GmailOAuth2Service {
     private $client;
     private $refreshToken;
+
+    private function configureHttpClientSsl() {
+        $caCandidates = [
+            __DIR__ . '/../certs/cacert.pem',
+            'D:/xammp/apache/bin/curl-ca-bundle.crt',
+            'C:/xammp/apache/bin/curl-ca-bundle.crt',
+            $_ENV['CURL_CA_BUNDLE'] ?? '',
+            ini_get('curl.cainfo') ?: '',
+            ini_get('openssl.cafile') ?: ''
+        ];
+
+        foreach ($caCandidates as $caFile) {
+            if (!empty($caFile) && is_file($caFile) && is_readable($caFile)) {
+                $this->client->setHttpClient(new \GuzzleHttp\Client([
+                    'verify' => $caFile,
+                    'timeout' => 30,
+                ]));
+                return;
+            }
+        }
+
+        error_log('WARNING: No readable CA bundle found for Google OAuth2 HTTP client.');
+    }
     
     public function __construct() {
         require_once __DIR__ . '/../vendor/autoload.php';
@@ -21,6 +44,7 @@ class GmailOAuth2Service {
         $this->client->setClientSecret($_ENV['GOOGLE_CLIENT_SECRET'] ?? '');
         $this->client->setRedirectUri($_ENV['GOOGLE_REDIRECT_URI'] ?? '');
         $this->client->setScopes(['https://www.googleapis.com/auth/gmail.send']);
+        $this->configureHttpClientSsl();
         
         // Load refresh token from storage
         $this->loadRefreshToken();
@@ -38,8 +62,18 @@ class GmailOAuth2Service {
             
             // Set the refresh token to client
             if ($this->refreshToken) {
-                $this->client->setAccessType('offline');
-                $this->client->refreshToken($this->refreshToken);
+                try {
+                    $this->client->setAccessType('offline');
+                    $this->client->refreshToken($this->refreshToken);
+                } catch (\Throwable $e) {
+                    $errorMessage = $e->getMessage();
+                    if (stripos($errorMessage, 'invalid_grant') !== false) {
+                        $this->clearStoredRefreshToken();
+                        error_log('Gmail OAuth2 invalid_grant during token refresh: stored token cleared. Reauthorization required.');
+                    } else {
+                        error_log('Gmail OAuth2 token refresh error: ' . $errorMessage);
+                    }
+                }
             }
         }
     }
@@ -55,6 +89,14 @@ class GmailOAuth2Service {
             'refresh_token' => $refreshToken,
             'created_at' => date('Y-m-d H:i:s')
         ]), LOCK_EX);
+    }
+
+    private function clearStoredRefreshToken() {
+        $this->refreshToken = null;
+        $tokenFile = __DIR__ . '/../.gmail_oauth_token.json';
+        if (file_exists($tokenFile)) {
+            @unlink($tokenFile);
+        }
     }
     
     /**
@@ -93,17 +135,31 @@ class GmailOAuth2Service {
      */
     public function sendOTPEmail($recipientEmail, $otp, $expiryMinutes = 2) {
         try {
+            if (!filter_var($recipientEmail, FILTER_VALIDATE_EMAIL)) {
+                return ['success' => false, 'message' => 'Invalid recipient email address.'];
+            }
+
             // Ensure client has valid token
             if (!$this->client->getAccessToken()) {
-                return ['success' => false, 'message' => 'No valid Gmail token. Please authorize first.'];
+                return ['success' => false, 'message' => 'No valid Gmail token. Please authorize first at /Security2/html/oauth2_setup.php.'];
             }
             
             // Create Gmail service
             $gmail = new Gmail($this->client);
+
+            $fromEmail = $_ENV['MAIL_FROM_EMAIL'] ?? '';
+            if (!filter_var($fromEmail, FILTER_VALIDATE_EMAIL)) {
+                return [
+                    'success' => false,
+                    'message' => 'MAIL_FROM_EMAIL is not configured as a valid email address.'
+                ];
+            }
+            $authenticatedEmail = $fromEmail;
             
             // Build email message
             $mail = new PHPMailer(true);
-            $mail->setFrom($_ENV['MAIL_FROM_EMAIL'], $_ENV['MAIL_FROM_NAME']);
+            $mail->setFrom($authenticatedEmail, $_ENV['MAIL_FROM_NAME'] ?? 'Security2 System');
+            $mail->addReplyTo($authenticatedEmail, $_ENV['MAIL_FROM_NAME'] ?? 'Security2 System');
             $mail->addAddress($recipientEmail);
             $mail->Subject = 'Your OTP Code - Security2 System';
             $mail->isHTML(true);
@@ -122,16 +178,40 @@ class GmailOAuth2Service {
             $gMessage = new Gmail\Message();
             $gMessage->setRaw(rtrim(strtr(base64_encode($message), '+/', '-_'), '='));
 
-            $gmail->users_messages->send('me', $gMessage);
+            $sentMessage = $gmail->users_messages->send('me', $gMessage);
+            $gmailMessageId = method_exists($sentMessage, 'getId') ? $sentMessage->getId() : null;
+
+            if (!$gmailMessageId) {
+                return [
+                    'success' => false,
+                    'message' => 'Gmail accepted the request but did not return a message ID.'
+                ];
+            }
+
+            error_log('OTP Gmail API accepted: to=' . $recipientEmail . ', message_id=' . $gmailMessageId);
             
             return [
                 'success' => true,
-                'message' => 'OTP sent successfully via Gmail'
+                'message' => 'OTP accepted by Gmail for delivery.',
+                'provider_message_id' => $gmailMessageId,
+                'sender_email' => $authenticatedEmail
             ];
         } catch (Exception $e) {
+            $errorMessage = $e->getMessage();
+
+            if (stripos($errorMessage, 'invalid_grant') !== false) {
+                $this->clearStoredRefreshToken();
+                error_log('Gmail OAuth2 invalid_grant: refresh token cleared. Reauthorization required.');
+                return [
+                    'success' => false,
+                    'message' => 'Gmail authorization expired or revoked. Please reconnect Gmail OAuth2 in oauth2_setup.php.'
+                ];
+            }
+
+            error_log('OTP Gmail API error for ' . $recipientEmail . ': ' . $e->getMessage());
             return [
                 'success' => false,
-                'message' => 'Gmail API Error: ' . $e->getMessage()
+                'message' => 'Gmail API Error: ' . $errorMessage
             ];
         }
     }

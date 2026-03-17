@@ -78,7 +78,11 @@ class EmailService {
             $this->mail->Body = $emailBody;
             
             // Plain text alternative
-            $this->mail->AltBody = "Your OTP code is: $otp\nThis code will expire in $expiryMinutes minutes.\n\nDo not share this code with anyone.";
+            if ((int)$expiryMinutes > 0) {
+                $this->mail->AltBody = "Your OTP code is: $otp\nThis code will expire in $expiryMinutes minutes.\n\nDo not share this code with anyone.";
+            } else {
+                $this->mail->AltBody = "Your OTP code is: $otp\nThis code remains valid until it is used or replaced by a new OTP request.\n\nDo not share this code with anyone.";
+            }
             
             // Send email
             if ($this->mail->send()) {
@@ -210,6 +214,10 @@ class EmailService {
      * Get OTP email HTML template
      */
     private function getOTPEmailTemplate($otp, $expiryMinutes) {
+        $expiryInfo = (int)$expiryMinutes > 0
+            ? "<p class='info'><strong>Expiry Time:</strong> $expiryMinutes minutes</p>"
+            : "<p class='info'><strong>Validity:</strong> This OTP remains valid until it is used or replaced by a new OTP request.</p>";
+
         return "
         <!DOCTYPE html>
         <html>
@@ -239,7 +247,7 @@ class EmailService {
                     <div class='otp-box'>
                         <p class='otp-code'>$otp</p>
                     </div>
-                    <p class='info'><strong>Expiry Time:</strong> $expiryMinutes minutes</p>
+                    $expiryInfo
                     <div class='warning'>
                         <strong>⚠️ Security Warning:</strong> Do not share this code with anyone. Security2 System staff will never ask for this code.
                     </div>

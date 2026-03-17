@@ -113,6 +113,25 @@ function createUnbanRequestsTable($conn) {
     }
 }
 
+function createDeleteUserRequestsTable($conn) {
+    try {
+        $conn->exec("CREATE TABLE IF NOT EXISTS delete_user_requests (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            user_id VARCHAR(9) NOT NULL,
+            requested_by VARCHAR(9) NOT NULL,
+            reason VARCHAR(255) NULL,
+            status VARCHAR(20) NOT NULL DEFAULT 'pending',
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            reviewed_by VARCHAR(9) NULL,
+            reviewed_at TIMESTAMP NULL,
+            INDEX idx_user_id (user_id),
+            INDEX idx_status (status)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+    } catch (Exception $e) {
+        // ignore
+    }
+}
+
 function logAdminActivity($conn, $actionType, $details = '', $time_in = null, $time_out = null) {
     if (!isset($_SESSION['user_id']) || $_SESSION['role'] !== 'platform_admin') return;
 
@@ -176,6 +195,8 @@ function logAdminActivity($conn, $actionType, $details = '', $time_in = null, $t
         'change_role' => "Changed user role: $details",
         'approve_unban_request' => "Approved unban request: $details",
         'deny_unban_request' => "Denied unban request: $details",
+        'approve_delete_request' => "Approved delete request: $details",
+        'deny_delete_request' => "Denied delete request: $details",
         'disable_admin' => "Disabled admin: $details",
         'enable_admin' => "Enabled admin: $details",
         'restore_admin' => "Restored admin: $details",
@@ -217,6 +238,7 @@ function logAdminActivity($conn, $actionType, $details = '', $time_in = null, $t
 // Create table if it doesn't exist
 createAdminActivityLogsTable($conn);
 createUnbanRequestsTable($conn);
+createDeleteUserRequestsTable($conn);
 
 if (isset($_GET['delete'])) {
     $id = $_GET['delete'];
@@ -352,14 +374,55 @@ if (isset($_GET['deny_unban_request'])) {
     exit();
 }
 
+if (isset($_GET['approve_delete_request'])) {
+    $request_id = (int)$_GET['approve_delete_request'];
+    try {
+        $req_stmt = $conn->prepare("SELECT user_id FROM delete_user_requests WHERE id = ? AND status = 'pending' LIMIT 1");
+        $req_stmt->execute([$request_id]);
+        $target_user_id = $req_stmt->fetchColumn();
+
+        if ($target_user_id) {
+            $approve_stmt = $conn->prepare("UPDATE delete_user_requests SET status = 'approved', reviewed_by = ?, reviewed_at = NOW() WHERE id = ?");
+            $approve_stmt->execute([$_SESSION['user_id'], $request_id]);
+
+            $status_reason = 'Deleted by Super Admin (Approved Request)';
+            $delete_stmt = $conn->prepare("UPDATE registered_users SET status='deleted', status_reason = ?, status_updated_at = NOW() WHERE id = ? AND role != 'platform_admin'");
+            $delete_stmt->execute([$status_reason, $target_user_id]);
+
+            logAdminActivity($conn, 'approve_delete_request', "Request ID: $request_id | User ID: $target_user_id | Page: User Management");
+        }
+    } catch (Exception $e) {
+        // ignore
+    }
+    header("Location: admin_dashboard.php");
+    exit();
+}
+
+if (isset($_GET['deny_delete_request'])) {
+    $request_id = (int)$_GET['deny_delete_request'];
+    try {
+        $stmt = $conn->prepare("UPDATE delete_user_requests SET status = 'denied', reviewed_by = ?, reviewed_at = NOW() WHERE id = ?");
+        $stmt->execute([$_SESSION['user_id'], $request_id]);
+        logAdminActivity($conn, 'deny_delete_request', "Request ID: $request_id | Page: User Management");
+    } catch (Exception $e) {
+        // ignore
+    }
+    header("Location: admin_dashboard.php");
+    exit();
+}
+
 if (isset($_GET['change_role'])) {
     $id = $_GET['change_role'];
-    $newRole = $_GET['new_role'] ?? 'artist';
-    
-    // Validate role
-    if (!in_array($newRole, ['artist', 'moderator'])) {
-        $newRole = 'artist';
-    }
+    $newRoleInput = $_GET['new_role'] ?? 'user';
+
+    $roleMap = [
+        'superadmin' => 'platform_admin',
+        'admin' => 'moderator',
+        'user' => 'artist',
+    ];
+
+    $newRoleInput = strtolower(trim($newRoleInput));
+    $newRole = $roleMap[$newRoleInput] ?? 'artist';
     
     // Prevent changing own role
     if ($id == $_SESSION['user_id']) {
@@ -383,8 +446,13 @@ if (isset($_GET['change_role'])) {
                 $stmt->execute([$newRole, $id]);
                 
                 // Log the role change
-                $roleLabel = $newRole === 'moderator' ? 'Admin' : 'Artist';
-                $oldRoleLabel = $oldRole === 'moderator' ? 'Admin' : 'Artist';
+                $toLabelMap = [
+                    'platform_admin' => 'Superadmin',
+                    'moderator' => 'Admin',
+                    'artist' => 'User',
+                ];
+                $roleLabel = $toLabelMap[$newRole] ?? ucfirst($newRole);
+                $oldRoleLabel = $toLabelMap[$oldRole] ?? ucfirst($oldRole);
                 $log_details = $user_details . " | Changed from $oldRoleLabel to $roleLabel | Page: User Management";
                 logAdminActivity($conn, 'change_role', $log_details);
             } catch (Exception $e) {
@@ -613,7 +681,7 @@ $users = $users->fetchAll(PDO::FETCH_ASSOC);
         <a href="admin_dashboard.php" class="sidebar-link <?php echo $current_page === 'admin_dashboard.php' ? 'bg-yellow-700' : 'bg-gray-700'; ?> text-white rounded-lg px-4 py-3">User Management</a>
         <a href="admin_flag_review.php" class="sidebar-link <?php echo $current_page === 'admin_flag_review.php' ? 'bg-yellow-700' : 'bg-gray-700'; ?> text-white rounded-lg px-4 py-3">Flag Audit</a>
         <a href="admin_deploy.php" class="sidebar-link <?php echo $current_page === 'admin_deploy.php' ? 'bg-yellow-700' : 'bg-gray-700'; ?> text-white rounded-lg px-4 py-3">Deploy Admins</a>
-        <a href="admin_marketplace.php" class="sidebar-link <?php echo $current_page === 'admin_marketplace.php' ? 'bg-yellow-700' : 'bg-gray-700'; ?> text-white rounded-lg px-4 py-3">Marketplace Art </a>
+        <a href="admin_marketplace.php" class="sidebar-link <?php echo $current_page === 'admin_marketplace.php' ? 'bg-yellow-700' : 'bg-gray-700'; ?> text-white rounded-lg px-4 py-3">Marketplace</a>
         <a href="admin_collab.php" class="sidebar-link <?php echo $current_page === 'admin_collab.php' ? 'bg-yellow-700' : 'bg-gray-700'; ?> text-white rounded-lg px-4 py-3">Collaboration Oversight</a>
         <a href="admin_activity.php" class="sidebar-link <?php echo $current_page === 'admin_activity.php' ? 'bg-yellow-700' : 'bg-gray-700'; ?> text-white rounded-lg px-4 py-3">Activity Logs</a>
 
@@ -658,7 +726,12 @@ $users = $users->fetchAll(PDO::FETCH_ASSOC);
             <tr class="border-b text-center">
             <td class="p-3"><?= $user['id'] ?></td>
             <td class="p-3"><?= htmlspecialchars($user['username']) ?></td>
-            <td class="p-3"><?= $user['role'] ?></td>
+            <td class="p-3"><?php
+                $displayRole = $user['role'] ?? 'artist';
+                if ($displayRole === 'platform_admin') echo 'Superadmin';
+                elseif ($displayRole === 'moderator') echo 'Admin';
+                else echo 'User';
+            ?></td>
             <td class="p-3"><?= $user['status'] ?? 'active' ?></td>
 
             <td class="p-3 space-x-2">
@@ -691,20 +764,21 @@ $users = $users->fetchAll(PDO::FETCH_ASSOC);
 
             </td>
 
-            <td class="p-3 space-x-1">
-                <?php if (($user['role'] ?? 'artist') === 'moderator'): ?>
-                    <a href="?change_role=<?= htmlspecialchars($user['id'], ENT_QUOTES) ?>&new_role=artist"
-                    class="bg-purple-600 text-white px-2 py-1 rounded text-sm"
-                    onclick="return confirm('Remove Admin status? User will become Artist.')">
-                    Remove Admin
-                    </a>
-                <?php else: ?>
-                    <a href="?change_role=<?= htmlspecialchars($user['id'], ENT_QUOTES) ?>&new_role=moderator"
-                    class="bg-blue-600 text-white px-2 py-1 rounded text-sm"
-                    onclick="return confirm('Make this user an Admin?')">
-                    Make Admin
-                    </a>
-                <?php endif; ?>
+            <td class="p-3">
+                <?php $currentRole = $user['role'] ?? 'artist'; ?>
+                <form method="GET" class="flex items-center justify-center gap-2">
+                    <input type="hidden" name="change_role" value="<?= htmlspecialchars($user['id'], ENT_QUOTES) ?>">
+                    <select name="new_role" class="border rounded px-2 py-1 text-sm">
+                        <option value="superadmin" <?= $currentRole === 'platform_admin' ? 'selected' : '' ?>>Superadmin</option>
+                        <option value="admin" <?= $currentRole === 'moderator' ? 'selected' : '' ?>>Admin</option>
+                        <option value="user" <?= $currentRole === 'artist' ? 'selected' : '' ?>>User</option>
+                    </select>
+                    <button type="submit"
+                    class="bg-indigo-700 text-white px-2 py-1 rounded text-sm"
+                    onclick="return confirm('Set selected role for this user?')">
+                    Set Role
+                    </button>
+                </form>
             </td>
 
             <td class="p-3">
@@ -812,6 +886,54 @@ $users = $users->fetchAll(PDO::FETCH_ASSOC);
                     </table>
                 <?php else: ?>
                     <p class="text-gray-500">No pending unban requests.</p>
+                <?php endif; ?>
+            </section>
+
+            <section class="bg-gray-50 rounded-xl shadow-inner p-5 mt-6">
+                <h3 class="text-lg font-semibold mb-4">Delete Requests (Pending Approval)</h3>
+                <?php
+                $delete_requests_stmt = $conn->prepare("\n                    SELECT dr.id, dr.user_id, dr.reason, dr.created_at,
+                           u.username AS user_username,
+                           u.first_name AS user_first_name,
+                           u.last_name AS user_last_name,
+                           req.username AS requester_username
+                    FROM delete_user_requests dr
+                    JOIN registered_users u ON u.id = dr.user_id
+                    LEFT JOIN registered_users req ON req.id = dr.requested_by
+                    WHERE dr.status = 'pending'
+                    ORDER BY dr.created_at DESC
+                ");
+                $delete_requests_stmt->execute();
+                $delete_requests_rows = $delete_requests_stmt->fetchAll(PDO::FETCH_ASSOC);
+                ?>
+                <?php if (!empty($delete_requests_rows)): ?>
+                    <table class="w-full border-collapse text-sm">
+                        <thead class="bg-gray-800 text-white">
+                            <tr>
+                                <th class="p-3 text-left">User</th>
+                                <th class="p-3 text-left">Requested By</th>
+                                <th class="p-3 text-left">Reason</th>
+                                <th class="p-3 text-left">Requested At</th>
+                                <th class="p-3 text-left">Action</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <?php foreach ($delete_requests_rows as $row): ?>
+                                <tr class="border-b">
+                                    <td class="p-3"><?php echo htmlspecialchars(trim(($row['user_first_name'] ?? '') . ' ' . ($row['user_last_name'] ?? '')) ?: ($row['user_username'] ?? $row['user_id'])); ?></td>
+                                    <td class="p-3"><?php echo htmlspecialchars($row['requester_username'] ?? 'Admin'); ?></td>
+                                    <td class="p-3"><?php echo htmlspecialchars($row['reason'] ?? ''); ?></td>
+                                    <td class="p-3"><?php echo htmlspecialchars($row['created_at'] ?? ''); ?></td>
+                                    <td class="p-3 space-x-2">
+                                        <a class="bg-green-600 text-white px-3 py-1 rounded" href="?approve_delete_request=<?php echo (int)$row['id']; ?>" onclick="return confirm('Approve delete request? This will mark the user as deleted.');">Approve</a>
+                                        <a class="bg-red-600 text-white px-3 py-1 rounded" href="?deny_delete_request=<?php echo (int)$row['id']; ?>">Deny</a>
+                                    </td>
+                                </tr>
+                            <?php endforeach; ?>
+                        </tbody>
+                    </table>
+                <?php else: ?>
+                    <p class="text-gray-500">No pending delete requests.</p>
                 <?php endif; ?>
             </section>
             

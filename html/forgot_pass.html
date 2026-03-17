@@ -33,7 +33,7 @@ button{background:#000;
 <div class="box">
 <h3>Forgot Password</h3>
 
-<input type="email" id="email" placeholder="Enter email" required>
+<input type="text" id="username" placeholder="Enter username" required>
 <button onclick="sendOTP()">Send OTP</button>
 
 <div class="msg" id="message"></div>
@@ -41,11 +41,11 @@ button{background:#000;
 
 <script>
 function sendOTP() {
-    const email = document.getElementById("email").value;
+    const username = document.getElementById("username").value;
     const message = document.getElementById("message");
 
-    if (!email) {
-        message.innerText = "Please enter email.";
+    if (!username) {
+        message.innerText = "Please enter username.";
         return;
     }
 
@@ -54,7 +54,7 @@ function sendOTP() {
         headers: {
             "Content-Type": "application/json"
         },
-        body: JSON.stringify({ email })
+        body: JSON.stringify({ username })
     })
     .then(res => res.json())
     .then(data => {
@@ -63,7 +63,7 @@ function sendOTP() {
         if (data.success) {
             // redirect to OTP page
             setTimeout(() => {
-                window.location.href = "verify_otp.html?email=" + email;
+                window.location.href = "verify_otp.html?email=" + encodeURIComponent(data.email);
             }, 1000);
         }
     })

@@ -13,6 +13,27 @@ require_once 'gmail_oauth2_helper.php';
 
 use Google\Client;
 
+function applyGoogleClientSslConfig(Client $client): void {
+    $caCandidates = [
+        __DIR__ . '/../certs/cacert.pem',
+        'D:/xammp/apache/bin/curl-ca-bundle.crt',
+        'C:/xammp/apache/bin/curl-ca-bundle.crt',
+        $_ENV['CURL_CA_BUNDLE'] ?? '',
+        ini_get('curl.cainfo') ?: '',
+        ini_get('openssl.cafile') ?: ''
+    ];
+
+    foreach ($caCandidates as $caFile) {
+        if (!empty($caFile) && is_file($caFile) && is_readable($caFile)) {
+            $client->setHttpClient(new \GuzzleHttp\Client([
+                'verify' => $caFile,
+                'timeout' => 30,
+            ]));
+            return;
+        }
+    }
+}
+
 // Check for authorization code
 if (!isset($_GET['code'])) {
     $error = $_GET['error'] ?? 'Unknown error';
@@ -27,6 +48,7 @@ try {
     $client->setClientId(EMAIL_CONFIG['google_client_id']);
     $client->setClientSecret(EMAIL_CONFIG['google_client_secret']);
     $client->setRedirectUri(EMAIL_CONFIG['google_redirect_uri']);
+    applyGoogleClientSslConfig($client);
     
     // Exchange authorization code for tokens
     $token = $client->fetchAccessTokenWithAuthCode($code);

@@ -18,6 +18,7 @@ $current_page = basename($_SERVER['PHP_SELF']);
     <nav class="flex flex-col gap-4 mt-8">
         <a href="moderator_dashboard.php" class="sidebar-link <?php echo ($current_page === 'moderator_dashboard.php') ? 'bg-yellow-700' : 'bg-gray-700'; ?> text-white rounded-lg px-4 py-3 font-medium hover:bg-yellow-700 transition-colors duration-300">User Management</a>
         <a href="moderator_flag_review.php" class="sidebar-link <?php echo ($current_page === 'moderator_flag_review.php') ? 'bg-yellow-700' : 'bg-gray-700'; ?> text-white rounded-lg px-4 py-3 font-medium hover:bg-yellow-700 transition-colors duration-300">Flag Review</a>
+        <a href="moderator_marketplace.php" class="sidebar-link <?php echo ($current_page === 'moderator_marketplace.php') ? 'bg-yellow-700' : 'bg-gray-700'; ?> text-white rounded-lg px-4 py-3 font-medium hover:bg-yellow-700 transition-colors duration-300">Marketplace</a>
         <a href="moderator_activity_logs.php" class="sidebar-link <?php echo ($current_page === 'moderator_activity_logs.php') ? 'bg-yellow-700' : 'bg-gray-700'; ?> text-white rounded-lg px-4 py-3 font-medium hover:bg-yellow-700 transition-colors duration-300">My Activity Logs</a>
         <a href="moderator_settings.php" class="sidebar-link <?php echo ($current_page === 'moderator_settings.php') ? 'bg-yellow-700' : 'bg-gray-700'; ?> text-white rounded-lg px-4 py-3 font-medium hover:bg-yellow-700 transition-colors duration-300">Settings</a>
     </nav>

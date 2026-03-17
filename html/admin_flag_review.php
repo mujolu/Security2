@@ -39,8 +39,18 @@ if ($user_id) {
 
 $username = $_SESSION['username'] ?? 'Super Admin';
 
+function logFlagAuditAdminAction($conn, $user_id, $message) {
+    if (function_exists('logAdminActivity')) {
+        logAdminActivity($conn, 'view', $message);
+        return;
+    }
+    if (function_exists('logActivity')) {
+        logActivity($conn, $user_id, $message, 'admin_activity_logs');
+    }
+}
+
 // Log page view for super admin
-logAdminActivity($conn, 'view', 'Flag Audit Dashboard');
+logFlagAuditAdminAction($conn, $user_id, 'Flag Audit Dashboard');
 
 // Ensure admin activity logs table exists
 try {
@@ -159,7 +169,7 @@ if ($result) {
 }
 
 // Log specific action for viewing flagged posts list
-logAdminActivity($conn, 'view', 'Viewed reported posts list (' . count($flagged_posts) . ' posts)');
+logFlagAuditAdminAction($conn, $user_id, 'Viewed reported posts list (' . count($flagged_posts) . ' posts)');
 
 // Get stats
 $stats_query = "SELECT 
@@ -236,7 +246,7 @@ if ($mod_result) {
         <a href="admin_dashboard.php" class="sidebar-link bg-gray-700 text-white rounded-lg px-4 py-3">User Management</a>
         <a href="admin_flag_review.php" class="sidebar-link bg-yellow-700 text-white rounded-lg px-4 py-3">Flag Audit</a>
         <a href="admin_deploy.php" class="sidebar-link bg-gray-700 text-white rounded-lg px-4 py-3">Deploy Admins</a>
-        <a href="admin_marketplace.php" class="sidebar-link bg-gray-700 text-white rounded-lg px-4 py-3">Marketplace Art </a>
+        <a href="admin_marketplace.php" class="sidebar-link bg-gray-700 text-white rounded-lg px-4 py-3">Marketplace</a>
         <a href="admin_collab.php" class="sidebar-link bg-gray-700 text-white rounded-lg px-4 py-3">Collaboration Oversight</a>
         <a href="admin_activity.php" class="sidebar-link bg-gray-700 text-white rounded-lg px-4 py-3">Activity Logs</a>
 

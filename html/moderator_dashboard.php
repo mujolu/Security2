@@ -49,6 +49,25 @@ function createUnbanRequestsTable($conn) {
     }
 }
 
+function createDeleteUserRequestsTable($conn) {
+    try {
+        $conn->exec("CREATE TABLE IF NOT EXISTS delete_user_requests (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            user_id VARCHAR(9) NOT NULL,
+            requested_by VARCHAR(9) NOT NULL,
+            reason VARCHAR(255) NULL,
+            status VARCHAR(20) NOT NULL DEFAULT 'pending',
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            reviewed_by VARCHAR(9) NULL,
+            reviewed_at TIMESTAMP NULL,
+            INDEX idx_user_id (user_id),
+            INDEX idx_status (status)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+    } catch (Exception $e) {
+        // ignore
+    }
+}
+
 // Log moderator activity with device and time tracking
 function logModeratorActivity($conn, $actionType, $details = '', $time_in = null, $time_out = null) {
     if (!isset($_SESSION['user_id']) || $_SESSION['role'] !== 'moderator') return;
@@ -106,6 +125,7 @@ function logModeratorActivity($conn, $actionType, $details = '', $time_in = null
         'ban_user' => "Banned user: $details",
         'unban_user' => "Unbanned user: $details",
         'request_unban' => "Requested unban: $details",
+        'request_delete_user' => "Requested delete user: $details",
         'logout' => "Logged out",
         default => $details
     };
@@ -122,6 +142,7 @@ function logModeratorActivity($conn, $actionType, $details = '', $time_in = null
 // Create table if it doesn't exist
 createModeratorActivityLogsTable($conn);
 createUnbanRequestsTable($conn);
+createDeleteUserRequestsTable($conn);
 
 // Log page view using the standard logging function
 logActivity($conn, $_SESSION['user_id'], 'Accessed Admin Dashboard', 'moderator_activity_logs');
@@ -159,6 +180,32 @@ if (isset($_GET['request_unban'])) {
             $stmt = $conn->prepare("INSERT INTO unban_requests (user_id, requested_by, reason, status) VALUES (?, ?, ?, 'pending')");
             $stmt->execute([$id, $_SESSION['user_id'], $reason]);
             logModeratorActivity($conn, 'request_unban', "ID: $id | Reason: $reason | Page: User Management");
+        }
+    } catch (Exception $e) {
+        // ignore
+    }
+
+    header("Location: moderator_dashboard.php");
+    exit();
+}
+
+if (isset($_GET['request_delete'])) {
+    $id = $_GET['request_delete'];
+    $reason = trim($_GET['request_reason'] ?? '');
+    if ($reason === '') {
+        $reason = 'Delete requested by Admin.';
+    }
+    $reason = substr($reason, 0, 255);
+
+    try {
+        $check_stmt = $conn->prepare("SELECT status FROM delete_user_requests WHERE user_id = ? ORDER BY id DESC LIMIT 1");
+        $check_stmt->execute([$id]);
+        $last_status = $check_stmt->fetchColumn();
+
+        if ($last_status !== 'pending') {
+            $stmt = $conn->prepare("INSERT INTO delete_user_requests (user_id, requested_by, reason, status) VALUES (?, ?, ?, 'pending')");
+            $stmt->execute([$id, $_SESSION['user_id'], $reason]);
+            logModeratorActivity($conn, 'request_delete_user', "ID: $id | Reason: $reason | Page: User Management");
         }
     } catch (Exception $e) {
         // ignore
@@ -276,7 +323,8 @@ try {
               FROM post_reports pr
               WHERE pr.post_id IN (SELECT id FROM posts WHERE user_id = u.id)
                  OR pr.post_id IN (SELECT id FROM marketplace_items WHERE user_id = u.id)) AS report_count,
-               (SELECT status FROM unban_requests ur WHERE ur.user_id = u.id ORDER BY ur.id DESC LIMIT 1) AS unban_status
+                             (SELECT status FROM unban_requests ur WHERE ur.user_id = u.id ORDER BY ur.id DESC LIMIT 1) AS unban_status,
+                             (SELECT status FROM delete_user_requests dr WHERE dr.user_id = u.id ORDER BY dr.id DESC LIMIT 1) AS delete_status
         FROM registered_users u
         WHERE u.role != 'platform_admin' AND u.id != :current_id
     ");
@@ -313,6 +361,14 @@ try {
         window.location.href = '?request_unban=' + encodeURIComponent(userId) + '&request_reason=' + encodeURIComponent(finalReason);
         return false;
     }
+
+    function doRequestDelete(userId, username) {
+        var reason = prompt('Request delete for ' + username + '. Provide reason:');
+        if (reason === null) return false;
+        var finalReason = reason.trim().length > 0 ? reason.trim() : 'Delete requested by Admin.';
+        window.location.href = '?request_delete=' + encodeURIComponent(userId) + '&request_reason=' + encodeURIComponent(finalReason);
+        return false;
+    }
     </script>
     <style>
         body { font-family: Arial, sans-serif; margin: 0; padding: 0; background-color: #515151; }
@@ -335,13 +391,12 @@ try {
         <!-- MAIN -->
         <main class="flex-1 p-6">
             <header class="bg-gray-800 text-white rounded-xl p-6 mb-6 flex justify-between">
-                <h3 class="text-xl font-bold">Admin Panel</h3>
+                <h3 class="text-xl font-bold">User Management</h3>
                 <a href="logout.php" class="bg-gray-700 px-4 py-2 rounded hover:bg-yellow-700">Logout</a>
             </header>
 
             <section class="bg-white rounded-xl shadow-lg p-6 mb-6">
-                <h2 class="text-2xl font-bold mb-2">Welcome, <?php echo htmlspecialchars($username); ?></h2>
-                <p class="text-gray-600 mb-4">This is your admin dashboard. Use the sidebar to access review tools and reports.</p>
+                <h2 class="text-2xl font-bold mb-6">User Management</h2>
 
                 <div class="overflow-x-auto">
                     <table class="w-full border-collapse">
@@ -369,6 +424,7 @@ try {
                                         $status = $user['status'] ?? 'active';
                                         $report_count = (int)($user['report_count'] ?? 0);
                                         $unban_status = $user['unban_status'] ?? '';
+                                        $delete_status = $user['delete_status'] ?? '';
                                         ?>
 
                                         <?php if ($status === 'banned'): ?>
@@ -380,7 +436,7 @@ try {
                                                     Unban
                                                     </a>
                                                 <?php else: ?>
-                                                    <span class="text-yellow-600 text-sm">Pending approval</span>
+                                                    <span class="inline-flex items-center border border-yellow-300 bg-yellow-50 text-yellow-700 text-xs font-medium px-2 py-1 rounded">Pending approval</span>
                                                     <?php if ($unban_status !== 'pending'): ?>
                                                         <a href="?unban=<?= htmlspecialchars($user['id'], ENT_QUOTES) ?>"
                                                         class="bg-blue-600 text-white px-3 py-1 rounded ml-2"
@@ -406,6 +462,16 @@ try {
                                                 Ban
                                                 </a>
                                             <?php endif; ?>
+                                        <?php endif; ?>
+
+                                        <?php if ($delete_status === 'pending'): ?>
+                                            <span class="inline-flex items-center border border-yellow-300 bg-yellow-50 text-yellow-700 text-xs font-medium px-2 py-1 rounded ml-2">Pending for approval</span>
+                                        <?php else: ?>
+                                            <a href="#"
+                                            class="bg-red-600 text-white px-3 py-1 rounded ml-2"
+                                            onclick="return doRequestDelete('<?= htmlspecialchars($user['id'], ENT_QUOTES) ?>', '<?= htmlspecialchars($user['username'], ENT_QUOTES) ?>')">
+                                            Delete
+                                            </a>
                                         <?php endif; ?>
                                     </td>
                                   

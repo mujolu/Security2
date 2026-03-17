@@ -1,41 +1,24 @@
 <?php
 session_start();
 require 'connection.php';
+include 'activity_logger.php';
 
-if (!isset($_SESSION['role']) || $_SESSION['role'] !== 'platform_admin') {
+if (!isset($_SESSION['role']) || $_SESSION['role'] !== 'moderator') {
     header("Location: login.php");
     exit();
 }
 
-header("Cache-Control: no-store, no-cache, must-revalidate, max-age=0");
-header("Pragma: no-cache");
-
 $user_id = $_SESSION['user_id'] ?? '';
-$user_full_name = 'Super Admin';
-$user_role = 'Super Admin';
+$username = $_SESSION['username'] ?? 'Admin';
 
-if ($user_id) {
-    try {
-        $user_stmt_temp = $conn->prepare("SELECT first_name, last_name, role FROM registered_users WHERE id = ?");
-        $user_stmt_temp->execute([$user_id]);
-        $user_data = $user_stmt_temp->fetch(PDO::FETCH_ASSOC);
-        if ($user_data) {
-            $user_full_name = trim(($user_data['first_name'] ?? '') . ' ' . ($user_data['last_name'] ?? ''));
-            if (!$user_full_name) {
-                $user_full_name = 'Super Admin';
-            }
-            $user_role = $user_data['role'] === 'platform_admin' ? 'Super Admin' : ucfirst($user_data['role'] ?? 'artist');
-        }
-    } catch (Exception $e) {
-    }
-}
+logActivity($conn, $user_id, 'Accessed Marketplace module (Admin)', 'moderator_activity_logs');
 
 $selectedArtist = trim($_GET['artist_id'] ?? '');
 $artists = [];
 $posts = [];
 $listings = [];
 
-function normalizeImagePath($path) {
+function normalizeImagePathModerator($path) {
     $imagePath = (string)$path;
     $imagePath = preg_replace('#^https?://[^/]+/#i', '', $imagePath);
     $imagePath = ltrim($imagePath, '/');
@@ -92,37 +75,20 @@ try {
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://fonts.googleapis.com/css2?family=Permanent+Marker&display=swap" rel="stylesheet">
-    <title>Artist Posts & Listings - Super Admin</title>
+    <title>Marketplace - Admin</title>
 </head>
 <body class="bg-gray-100 min-h-screen">
 <div class="layout flex w-full min-h-screen">
 
-<aside class="w-64 bg-gray-800 min-h-screen p-6 flex flex-col">
-    <h2 class="text-2xl font-bold text-white mb-5">ARTLAB SUPERADMIN</h2>
-
-    <div class="flex flex-col items-center text-center mt-8">
-        <img src="/Security2/images/profilepic.jpg" class="w-24 h-24 rounded-full border-4 border-yellow-500 mb-4">
-        <h4 class="text-white font-semibold"><?php echo htmlspecialchars($user_full_name); ?></h4>
-        <p class="text-gray-400 text-sm"><?php echo htmlspecialchars($user_role); ?></p>
-    </div>
-
-    <nav class="flex flex-col gap-4 mt-8">
-        <a href="admin_dashboard.php" class="sidebar-link bg-gray-700 text-white rounded-lg px-4 py-3">User Management</a>
-        <a href="admin_flag_review.php" class="sidebar-link bg-gray-700 text-white rounded-lg px-4 py-3">Flag Audit</a>
-        <a href="admin_deploy.php" class="sidebar-link bg-gray-700 text-white rounded-lg px-4 py-3">Deploy Admins</a>
-        <a href="admin_marketplace.php" class="sidebar-link bg-yellow-700 text-white rounded-lg px-4 py-3">Marketplace</a>
-        <a href="admin_collab.php" class="sidebar-link bg-gray-700 text-white rounded-lg px-4 py-3">Collaboration Oversight</a>
-        <a href="admin_activity.php" class="sidebar-link bg-gray-700 text-white rounded-lg px-4 py-3">Activity Logs</a>
-    </nav>
-</aside>
+<?php include 'moderator_sidebar.php'; ?>
 
 <main class="flex-1 p-6">
     <header class="bg-gray-800 text-white rounded-xl p-6 mb-6 flex justify-between">
-        <h3 class="text-xl font-bold">Artist Posts & Marketplace Listings</h3>
+        <h3 class="text-xl font-bold">Marketplace</h3>
         <a href="logout.php" class="bg-gray-700 px-4 py-2 rounded hover:bg-yellow-700">Logout</a>
     </header>
 
@@ -141,7 +107,7 @@ try {
                 </select>
             </div>
             <button type="submit" class="bg-blue-600 text-white px-4 py-2 rounded">Apply</button>
-            <a href="admin_marketplace.php" class="bg-gray-200 text-gray-800 px-4 py-2 rounded">Reset</a>
+            <a href="moderator_marketplace.php" class="bg-gray-200 text-gray-800 px-4 py-2 rounded">Reset</a>
         </form>
 
         <div class="overflow-x-auto">
@@ -206,7 +172,7 @@ try {
                 <?php foreach ($listings as $item): ?>
                     <div class="border rounded-lg p-4">
                         <?php if (!empty($item['image_filename'])): ?>
-                            <img src="<?= htmlspecialchars(normalizeImagePath($item['image_filename'])) ?>" class="w-full h-40 object-cover rounded mb-3" alt="listing image">
+                            <img src="<?= htmlspecialchars(normalizeImagePathModerator($item['image_filename'])) ?>" class="w-full h-40 object-cover rounded mb-3" alt="listing image">
                         <?php endif; ?>
                         <div class="text-xs text-gray-500 mb-1">By <?= htmlspecialchars($item['username']) ?> • <?= htmlspecialchars($item['created_at']) ?></div>
                         <h4 class="font-semibold mb-2"><?= htmlspecialchars($item['title'] ?? 'Untitled') ?></h4>
@@ -221,13 +187,5 @@ try {
     </section>
 </main>
 </div>
-
-<script>
-if (<?php echo isset($_SESSION['username']) ? 'true' : 'false'; ?>) {
-    window.history.pushState(null, null, window.location.href);
-    window.onpopstate = function () { window.history.pushState(null, null, window.location.href); };
-}
-</script>
-
 </body>
 </html>

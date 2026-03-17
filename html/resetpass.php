@@ -1,6 +1,57 @@
 <?php
 session_start();
 require 'connection.php';
+require_once 'email_helper.php';
+require_once 'gmail_oauth2_helper.php';
+
+function sendRecoveryOtpEmail($recipientEmail, $otp, $expiryMinutes = 1) {
+    $mailService = EMAIL_CONFIG['service'] ?? ($_ENV['MAIL_SERVICE'] ?? 'gmail');
+
+    if ($mailService === 'gmail_oauth2') {
+        $gmailResult = sendOTPViaGmail($recipientEmail, $otp, $expiryMinutes);
+        if ($gmailResult['success']) {
+            return $gmailResult;
+        }
+
+        $hasSmtpFallback = !empty(EMAIL_CONFIG['smtp_username']) && !empty(EMAIL_CONFIG['smtp_password']);
+        if ($hasSmtpFallback) {
+            $fallbackResult = sendOTPEmail($recipientEmail, $otp, $expiryMinutes);
+            if ($fallbackResult['success']) {
+                return [
+                    'success' => true,
+                    'message' => 'OTP sent successfully via SMTP fallback.'
+                ];
+            }
+
+            return [
+                'success' => false,
+                'message' => ($gmailResult['message'] ?? 'Gmail OAuth2 failed') . ' | SMTP fallback failed: ' . ($fallbackResult['message'] ?? 'Unknown error')
+            ];
+        }
+
+        return [
+            'success' => false,
+            'message' => ($gmailResult['message'] ?? 'Gmail OAuth2 failed') . ' Please complete OAuth2 setup or add GMAIL_EMAIL and GMAIL_APP_PASSWORD for SMTP fallback.'
+        ];
+    }
+
+    return sendOTPEmail($recipientEmail, $otp, $expiryMinutes);
+}
+
+function maskRecoveryEmail($email) {
+    if (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
+        return $email;
+    }
+
+    [$localPart, $domainPart] = explode('@', $email, 2);
+    if (strlen($localPart) <= 2) {
+        $maskedLocal = substr($localPart, 0, 1) . '*';
+    } else {
+        $maskedLocal = substr($localPart, 0, 2) . str_repeat('*', max(1, strlen($localPart) - 2));
+    }
+
+    return $maskedLocal . '@' . $domainPart;
+}
 
 // Initialize step if not set
 if (!isset($_SESSION['recovery_step'])) {
@@ -16,26 +67,19 @@ if (isset($_POST['back_step']) && $_SESSION['recovery_step'] > 1) {
 $error = '';
 $success = '';
 
-// Step 1: Email/Username verification
+// Step 1: Username verification
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['step1_submit'])) {
-    $email_or_username = isset($_POST['email_username']) ? trim($_POST['email_username']) : '';
+    $username = isset($_POST['username']) ? trim($_POST['username']) : '';
 
-    if (empty($email_or_username)) {
-        $error = "Please enter your email or username.";
+    if (empty($username)) {
+        $error = "Please enter your username.";
     } else {
-        // Check if user exists (PDO)
-        $query = "SELECT * FROM registered_users WHERE email = :val OR username = :val LIMIT 1";
+        $query = "SELECT id, email, username FROM registered_users WHERE username = :username LIMIT 1";
         $stmt = $conn->prepare($query);
-        $stmt->execute([':val' => $email_or_username]);
+        $stmt->execute([':username' => $username]);
         $user = $stmt->fetch(PDO::FETCH_ASSOC);
 
         if ($user) {
-            $_SESSION['recovery_user_id'] = $user['id'];
-            $_SESSION['recovery_email'] = $user['email'];
-            $_SESSION['recovery_step'] = 2;
-            unset($_SESSION['otp_verified']);
-
-            // Determine if account has security questions set in user_security_settings
             $hasSecurity = false;
             try {
                 $conn->exec("CREATE TABLE IF NOT EXISTS user_security_settings (
@@ -68,14 +112,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['step1_submit'])) {
                 // ignore; treat as no security questions
             }
             $_SESSION['has_security'] = $hasSecurity;
-           
 
-
-            // Generate OTP and send via Mailtrap/email helper
             $otp = random_int(100000, 999999);
-            // $_SESSION['recovery_otp'] = $otp;
             $otpHash = password_hash($otp, PASSWORD_DEFAULT);
-            $expiresAt = date('Y-m-d H:i:s', time() + 60); // 1 minute
+            $expiresAt = date('Y-m-d H:i:s', time() + 60);
+
+            // Invalidate previous unused OTPs for this account
+            $invalidate = $conn->prepare("UPDATE reset_password SET used = 1 WHERE user_id = :uid AND email = :email AND used = 0");
+            $invalidate->execute([
+                ':uid' => $user['id'],
+                ':email' => $user['email']
+            ]);
          
             $insert = $conn->prepare("
                 INSERT INTO reset_password (user_id, email, otp_hash, expires_at)
@@ -88,27 +135,24 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['step1_submit'])) {
                  ':exp'  => $expiresAt
             ]);
 
+            $_SESSION['otp_request_id'] = $conn->lastInsertId();
             $_SESSION['otp_expires'] = $expiresAt;
 
-            // Send OTP via Gmail OAuth2 or email helper
-            require_once 'email_helper.php';
-            require_once 'gmail_oauth2_helper.php';
-            
-            // Use Gmail OAuth2 if configured
-            $mailService = $_ENV['MAIL_SERVICE'] ?? 'mailtrap';
-            if ($mailService === 'gmail_oauth2') {
-                $result = sendOTPViaGmail($user['email'], $otp, 1); // 10 minutes expiry
-            } else {
-                $result = sendOTPEmail($user['email'], $otp, 1); // Fallback to email_helper
-            }
+            $result = sendRecoveryOtpEmail($user['email'], $otp, 1);
 
             if ($result['success']) {
-                $success = "OTP has been sent to your email.";
+                $_SESSION['recovery_user_id'] = $user['id'];
+                $_SESSION['recovery_email'] = $user['email'];
+                $_SESSION['recovery_step'] = 2;
+                unset($_SESSION['otp_verified']);
+                error_log('OTP recovery sent: username=' . $user['username'] . ', email=' . $user['email'] . ', provider_message_id=' . ($result['provider_message_id'] ?? 'n/a'));
+                $success = "OTP has been sent to your registered email: " . $user['email'] . ". Please check Inbox/Spam/All Mail.";
             } else {
-                $success = "Error sending OTP: " . $result['message'];
+                error_log('OTP recovery failed: username=' . $user['username'] . ', email=' . $user['email'] . ', error=' . ($result['message'] ?? 'Unknown'));
+                $error = "Error sending OTP: " . $result['message'];
             }
         } else {
-            $error = "Email or username not found.";
+            $error = "Username not found.";
         }
     }
 }
@@ -124,7 +168,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['resend_otp'])) {
         // Generate new OTP
         $otp = random_int(100000, 999999);
         $otpHash = password_hash($otp, PASSWORD_DEFAULT);
-        $expiresAt = date('Y-m-d H:i:s', time() + 60); // 1 minute
+        $expiresAt = date('Y-m-d H:i:s', time() + 60);
+
+        // Invalidate previous unused OTPs for this account
+        $invalidate = $conn->prepare("UPDATE reset_password SET used = 1 WHERE user_id = :uid AND email = :email AND used = 0");
+        $invalidate->execute([
+            ':uid' => $_SESSION['recovery_user_id'],
+            ':email' => $_SESSION['recovery_email']
+        ]);
 
         // Save OTP
         $insert = $conn->prepare("
@@ -138,22 +189,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['resend_otp'])) {
             ':exp'   => $expiresAt
         ]);
 
+        $_SESSION['otp_request_id'] = $conn->lastInsertId();
         $_SESSION['otp_expires'] = $expiresAt;
+
         unset($_SESSION['otp_verified']);
 
-        // Send email
-        require_once 'email_helper.php';
-        require_once 'gmail_oauth2_helper.php';
-
-        $mailService = $_ENV['MAIL_SERVICE'] ?? 'mailtrap';
-        $result = ($mailService === 'gmail_oauth2')
-            ? sendOTPViaGmail($_SESSION['recovery_email'], $otp, 1)
-            : sendOTPEmail($_SESSION['recovery_email'], $otp, 1);
+        $result = sendRecoveryOtpEmail($_SESSION['recovery_email'], $otp, 1);
 
         if ($result['success']) {
+            error_log('OTP recovery resend sent: user_id=' . $_SESSION['recovery_user_id'] . ', email=' . $_SESSION['recovery_email'] . ', provider_message_id=' . ($result['provider_message_id'] ?? 'n/a'));
             $success = "A new OTP has been sent to your email.";
             $_SESSION['recovery_step'] = 2; // stay on OTP step
         } else {
+            error_log('OTP recovery resend failed: user_id=' . $_SESSION['recovery_user_id'] . ', email=' . $_SESSION['recovery_email'] . ', error=' . ($result['message'] ?? 'Unknown'));
             $error = "Error sending OTP: " . $result['message'];
         }
     }
@@ -169,17 +217,30 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['step2_submit'])) {
         $error = "Please enter the OTP.";
     } else {
 
-        // Fetch latest OTP for this user/email
-        $stmt = $conn->prepare("
-            SELECT id, otp_hash, expires_at, used
-            FROM reset_password
-            WHERE email = :email
-            ORDER BY created_at DESC
-            LIMIT 1
-        ");
-        $stmt->execute([
-            ':email' => $_SESSION['recovery_email']
-        ]);
+        // Fetch the exact OTP request for this session (fallback: latest if missing)
+        if (!empty($_SESSION['otp_request_id'])) {
+            $stmt = $conn->prepare(" 
+                SELECT id, otp_hash, used, expires_at
+                FROM reset_password
+                WHERE id = :id AND email = :email
+                LIMIT 1
+            ");
+            $stmt->execute([
+                ':id' => $_SESSION['otp_request_id'],
+                ':email' => $_SESSION['recovery_email']
+            ]);
+        } else {
+            $stmt = $conn->prepare(" 
+                SELECT id, otp_hash, used, expires_at
+                FROM reset_password
+                WHERE email = :email
+                ORDER BY id DESC
+                LIMIT 1
+            ");
+            $stmt->execute([
+                ':email' => $_SESSION['recovery_email']
+            ]);
+        }
 
         $otpRow = $stmt->fetch(PDO::FETCH_ASSOC);
 
@@ -188,7 +249,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['step2_submit'])) {
         } elseif ($otpRow['used'] == 1) {
             $error = "This OTP has already been used.";
         } elseif (strtotime($otpRow['expires_at']) < time()) {
-            $error = "OTP has expired.";
+            $error = "OTP expired. Please resend a new OTP.";
         } elseif (!password_verify($entered_otp, $otpRow['otp_hash'])) {
             $error = "Invalid OTP. Please try again.";
         } else {
@@ -201,6 +262,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['step2_submit'])) {
             $update->execute([':id' => $otpRow['id']]);
 
             $_SESSION['otp_verified'] = true;
+            unset($_SESSION['otp_request_id']);
 
             // Go to next step
             if (!empty($_SESSION['has_security'])) {
@@ -528,15 +590,15 @@ if (isset($_POST['back_step'])) {
         </div>
     <?php endif; ?>
 
-    <!-- Step 1: Email/Username -->
+    <!-- Step 1: Username -->
     <?php if ($_SESSION['recovery_step'] == 1): ?>
         <form method="POST">
             <div class="form-group">
-                <label for="email_username">Enter Your Email or Username</label>
-                <input type="text" id="email_username" name="email_username" placeholder="example@email.com or username" required>
+                <label for="username">Enter Your Username</label>
+                <input type="text" id="username" name="username" placeholder="Enter username" required>
             </div>
 
-            <button type="submit" name="step1_submit" class="btn-submit">Next</button>
+            <button type="submit" name="step1_submit" class="btn-submit">Send OTP to Registered Email</button>
         </form>
     <?php endif; ?>
 
@@ -550,9 +612,7 @@ if (isset($_POST['back_step'])) {
                 An OTP has been sent to <?= htmlspecialchars($_SESSION['recovery_email']) ?>
             </p>
 
-            <p id="otpTimer" style="color:#d9534f;font-size:13px;">
-                Loading timer...
-            </p>
+            <p id="otpTimer" style="color:#d9534f;font-size:13px; margin-top:6px;"></p>
 
             <input type="text" id="otp" name="otp" placeholder="Enter 6-digit OTP" maxlength="6">
         </div>
@@ -575,43 +635,33 @@ if (isset($_POST['back_step'])) {
         </button>
     </form>
 
-
     <script>
     document.addEventListener('DOMContentLoaded', function () {
-
-        const expiryTime = <?= strtotime($_SESSION['otp_expires'] ?? 'now') ?> * 1000;
-        const timerEl = document.getElementById('otpTimer');
+        const expiryTime = <?= isset($_SESSION['otp_expires']) ? strtotime($_SESSION['otp_expires']) * 1000 : 0 ?>;
         const resendBox = document.getElementById('resendBox');
+        const timerEl = document.getElementById('otpTimer');
 
         function updateTimer() {
+            if (!timerEl || !resendBox || !expiryTime) return;
+
             const now = Date.now();
             const diff = expiryTime - now;
 
             if (diff <= 0) {
-                timerEl.textContent = "OTP expired.";
-                resendBox.style.display = "inline-block";
+                timerEl.textContent = 'OTP expired. Click Resend OTP.';
+                resendBox.style.display = 'inline-block';
                 return;
             }
 
-            const minutes = Math.floor(diff / 60000);
-            const seconds = Math.floor((diff % 60000) / 1000);
-
-            timerEl.textContent =
-                `OTP expires in ${minutes}:${seconds.toString().padStart(2, '0')}`;
-
+            const seconds = Math.floor(diff / 1000);
+            timerEl.textContent = 'OTP expires in ' + seconds + 's';
+            resendBox.style.display = 'none';
             setTimeout(updateTimer, 1000);
         }
 
         updateTimer();
     });
     </script>
-
-
-        <?php if (isset($_SESSION['otp_expires'])): ?>
-            <script>
-                const otpExpiryTime = <?= strtotime($_SESSION['otp_expires']) ?> * 1000; // convert to ms
-            </script>
-        <?php endif; ?>
 
     <?php endif; ?>
 

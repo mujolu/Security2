@@ -30,7 +30,12 @@ if ($mailService === 'gmail_oauth2') {
         'service'       => 'gmail_oauth2',
         'google_client_id'     => $_ENV['GOOGLE_CLIENT_ID'] ?? '',
         'google_client_secret' => $_ENV['GOOGLE_CLIENT_SECRET'] ?? '',
-        'google_redirect_uri'  => $_ENV['GOOGLE_REDIRECT_URI'] ?? ''
+        'google_redirect_uri'  => $_ENV['GOOGLE_REDIRECT_URI'] ?? '',
+        'smtp_host'     => 'smtp.gmail.com',
+        'smtp_port'     => 587,
+        'smtp_username' => $_ENV['GMAIL_EMAIL'] ?? '',
+        'smtp_password' => $_ENV['GMAIL_APP_PASSWORD'] ?? '',
+        'smtp_secure'   => 'tls'
     ]);
 } elseif ($mailService === 'mailtrap') {
     // Mailtrap configuration
@@ -61,8 +66,9 @@ if ($mailService === 'gmail_oauth2') {
 }
 
 // Validate configuration
-if (empty(EMAIL_CONFIG['smtp_username']) || empty(EMAIL_CONFIG['smtp_password'])) {
-    error_log('WARNING: Email credentials not configured in .env file');
+$smtpService = in_array(EMAIL_CONFIG['service'] ?? '', ['gmail', 'mailtrap', 'gmail_oauth2'], true);
+if ($smtpService && (empty(EMAIL_CONFIG['smtp_username']) || empty(EMAIL_CONFIG['smtp_password']))) {
+    error_log('WARNING: SMTP fallback credentials not configured in .env file');
 }
 
 ?>
